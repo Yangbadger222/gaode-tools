@@ -1,0 +1,11 @@
+.env
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.venv-py314-backup/
+Thumbs.db
+Desktop.ini
+.pytest_cache/
+outputs/*
+!outputs/.gitkeep

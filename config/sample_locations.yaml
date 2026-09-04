@@ -1,0 +1,9 @@
+locations:
+  - id: campus_001
+    lat: 31.2750
+    lon: 120.7420
+    zooms: [17, 18, 19, 20]
+  - id: campus_002
+    lat: 31.2760
+    lon: 120.7440
+    zooms: [18, 19]

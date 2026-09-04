@@ -1,0 +1,10 @@
+region_id: campus_001
+bbox:
+  west: 120.740
+  south: 31.274
+  east: 120.746
+  north: 31.280
+zoom: 19
+width: 1024
+height: 1024
+overlap: 0.15
