@@ -417,6 +417,8 @@ Ignore          = 连有没有路都无法确定
 
 以下情况应该 Split：真实 junction、path type 变化、`visible → fully_occluded → visible` 等重要可见性变化。Split 后两段必须共享同一个 node。
 
+软件里的 Split 默认生成 `continuation` 节点。它表示“只是把一条连续的路切成几段”，例如 `visible → fully_occluded` 的分段点，不是真实路口。只有确认存在路径分叉或汇合时，才在 Properties 中把该节点改成 `junction`。不要把所有 Split 都当成路口。
+
 不要因为每一棵小树或零碎阴影都切分。如果遮挡不影响道路连续性判断，可以保留同一条 edge。
 
 两条分别画出的路径如果现实中确实连接，需要手工 Merge。两个 endpoint 很近不代表它们一定连通，软件只提示，不会自动合并。
@@ -448,7 +450,7 @@ Warnings 只提示，不会自动修改 GT。
 - `Nearby disconnected endpoints`：检查是不是忘了 Merge，也可能确实不相连。
 - `Edge intersection without shared junction`：真实连通就补 junction；桥上桥下无需连接。
 - `Fully occluded without evidence`：重新确认 verification source。
-- `Possible boundary node`：靠近边缘的 endpoint 是否应改为 boundary。
+- `Endpoint near region boundary`：靠近边缘的 endpoint 是否应改为 boundary；`Boundary node far from region boundary` 则表示 boundary 离四条边都较远。
 - `Short edge`：检查是否为误点产生的碎 edge。
 
 ## 23. 保存和数据安全
