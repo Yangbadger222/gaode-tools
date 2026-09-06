@@ -15,10 +15,28 @@ def atomic_save(data,path):
  fd,tmp=tempfile.mkstemp(prefix='.annotation-',suffix='.json',dir=path.parent);os.close(fd);Path(tmp).write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8');json.loads(Path(tmp).read_text(encoding='utf-8'));os.replace(tmp,path)
 
 class View(QGraphicsView):
- def __init__(self,w): super().__init__();self.w=w;self.setScene(QGraphicsScene(self));self.setMouseTracking(True);self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse);self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse);self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
- def mousePressEvent(self,e): self.w.click(self.mapToScene(e.position().toPoint()),e)
- def mouseMoveEvent(self,e): self.w.move(self.mapToScene(e.position().toPoint()),e)
- def mouseReleaseEvent(self,e): self.w.release(); self.w.drag=None
+ def __init__(self,w):
+  super().__init__();self.w=w;self.setScene(QGraphicsScene(self));self.setMouseTracking(True);self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse);self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse);self.setDragMode(QGraphicsView.DragMode.NoDrag);self.pan_origin=None
+ def begin_pan(self,e):
+  self.pan_origin=e.position().toPoint();self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+ def mousePressEvent(self,e):
+  if e.button()==Qt.MouseButton.MiddleButton:
+   self.begin_pan(e);e.accept();return
+  self.w.click(self.mapToScene(e.position().toPoint()),e)
+  # A selected node/control point starts a geometry edit. Every other left drag
+  # in Select mode is a canvas pan, so users can inspect large tile mosaics.
+  if e.button()==Qt.MouseButton.LeftButton and self.w.mode=='SELECT' and not self.w.drag:self.begin_pan(e)
+ def mouseMoveEvent(self,e):
+  if self.pan_origin is not None:
+   current=e.position().toPoint();delta=current-self.pan_origin
+   self.horizontalScrollBar().setValue(self.horizontalScrollBar().value()-delta.x())
+   self.verticalScrollBar().setValue(self.verticalScrollBar().value()-delta.y())
+   self.pan_origin=current;e.accept();return
+  self.w.move(self.mapToScene(e.position().toPoint()),e)
+ def mouseReleaseEvent(self,e):
+  if self.pan_origin is not None:
+   self.pan_origin=None;self.viewport().unsetCursor();e.accept();return
+  self.w.release();self.w.drag=None
  def mouseDoubleClickEvent(self,e): self.w.finish(self.mapToScene(e.position().toPoint()))
  def wheelEvent(self,e):
   factor=1.18 if e.angleDelta().y()>0 else 1/1.18
@@ -37,7 +55,7 @@ class AnnotatorWindow(QMainWindow):
  def finish_current(self):
   if self.mode in ('DRAW_PATH','IGNORE'): self.finish(None)
  def help(self):
-  QMessageBox.information(self,'Annotator 使用说明','选择：点击路线或节点\n画路线：D 或 Draw Path，左键逐点，双击或 Finish Path 完成\n缩放：鼠标滚轮（以光标为中心）\n平移：中键拖动或工具栏 Select 后拖动画布\n插点：选中路线后按住 Option/Alt 点击\n删除：选中中间控制点、边或 Ignore 后按 Delete\n模式：Esc 返回 SELECT；S Split；M Merge；I Ignore\n保存：Cmd/Ctrl+S；撤销 Cmd/Ctrl+Z；重做 Cmd/Ctrl+Shift+Z')
+  QMessageBox.information(self,'Annotator 使用说明','选择：点击路线或节点\n画路线：D 或 Draw Path，左键逐点，双击或 Finish Path 完成\n缩放：鼠标滚轮（以光标为中心）\n平移：中键拖动；或 Select 模式下从空白处/路线拖动画布\n编辑节点：Select 模式下拖动蓝色节点或青色控制点\n插点：选中路线后按住 Option/Alt 点击\n删除：选中中间控制点、边或 Ignore 后按 Delete\n模式：Esc 返回 SELECT；S Split；M Merge；I Ignore\n保存：Cmd/Ctrl+S；撤销 Cmd/Ctrl+Z；重做 Cmd/Ctrl+Shift+Z')
  def keyPressEvent(self,e):
   k=e.key();mods=e.modifiers()
   if k==Qt.Key.Key_Escape:self.set_mode('SELECT')
