@@ -1,4 +1,20 @@
+<div align="center">
+
 # 高德卫星地图采集与路径标注工具
+
+**面向研究团队的卫星影像采集、路径标注与模型验证工作流**
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Platforms](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-555555)
+![Map](https://img.shields.io/badge/Map-AMap%20Satellite-1677FF)
+![Image](https://img.shields.io/badge/Image-1024%C3%971024-2E8B57)
+![Annotation](https://img.shields.io/badge/Annotation-Path%20Polyline-E46C47)
+
+[快速开始](#最短使用流程) · [安装](#2-安装) · [地图采集](#5-正式地图采集规范) · [开始标注](#10-启动标注器) · [标注规范](#12-到底标什么) · [导出验证](#25-导出给模型做验证) · [常见问题](#28-常见问题)
+
+</div>
+
+---
 
 这是一个给研究团队使用的小型工具，用来完成两件事：
 
@@ -8,6 +24,14 @@
 它不是道路分割工具，也不会自动判断哪里能走。V2 保存的核心真值是人工确认的 **Path Polyline**；path type 和局部 evidence 是两个独立维度。旧版 Region Graph JSON 仍能打开，但会安全地另存为 schema v2，不会覆盖旧文件。后续的 mask、centerline 或路径规划输入应从这份标注自动生成，不要让标注员重复维护多份 GT。
 
 > 当前正式数据规格：高德 Satellite、Zoom 19、1024×1024、15% overlap。
+
+## 界面预览
+
+| 中文逐图指导 | English interface |
+|---|---|
+| ![中文逐图指导](docs/ui_v2/06_image_guide_zh.png) | ![English interface](docs/ui_v2/07_english.png) |
+
+标注器支持中英文即时切换、Mac 触控板与鼠标缩放/平移、逐图操作指导、Clean RGB、Evidence 审核和保存后自动进入下一张。
 
 ## 最短使用流程
 
