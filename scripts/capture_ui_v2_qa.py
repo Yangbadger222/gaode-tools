@@ -62,7 +62,16 @@ def main() -> int:
         window.sel = ("edge", edge_id)
     window.render()
     window.update_ui_state()
+    window.inspector_tabs.setCurrentIndex(0)
     snap(app, window, args.out_dir / "01_default.png")
+
+    window.inspector_tabs.setCurrentIndex(2)
+    snap(app, window, args.out_dir / "06_image_guide_zh.png")
+
+    window.set_language("en_US")
+    snap(app, window, args.out_dir / "07_english.png")
+    window.set_language("zh_CN")
+    window.inspector_tabs.setCurrentIndex(0)
 
     window.toggle_clean_rgb(True)
     snap(app, window, args.out_dir / "02_clean_rgb.png")
@@ -94,7 +103,7 @@ def main() -> int:
     window.dirty = False
     window.close()
     state.path.unlink(missing_ok=True)
-    print(f"Saved 5 UI QA screenshots to {args.out_dir.resolve()}")
+    print(f"Saved 7 UI QA screenshots to {args.out_dir.resolve()}")
     return 0
 
 

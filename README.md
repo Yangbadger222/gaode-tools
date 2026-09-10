@@ -50,6 +50,8 @@ python scripts/launch_annotator.py
 
 启动后点 **Open Folder**，选择普通图片文件夹即可。程序会自动扫描 PNG、JPEG、TIFF 和 WebP，识别已有同名 JSON，并打开第一张未审核图片；只有图片也能直接开始标，第一次保存时才建立 `annotations_v2/`。详细说明见 [docs/ANNOTATION_TOOL_V2.md](docs/ANNOTATION_TOOL_V2.md)。
 
+标注器默认显示中文。顶部 **语言** 菜单可即时切换为 English，并会记住选择。主要按钮悬停满 3 秒会显示用途说明；右侧 **逐图指导** 会根据当前图片状态告诉你下一步。团队统一规则见 [每张图片的中英文标注指导](docs/ANNOTATION_GUIDE_BILINGUAL.md)。
+
 ## 1. 环境要求
 
 - Python 3.12.x
@@ -93,6 +95,22 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 项目不会自动修改 Execution Policy。也可以运行 `.\scripts\setup_windows.ps1`。Windows 代码兼容已经完成，但仍需真机验收，步骤见 [WINDOWS_TEST_CHECKLIST.md](WINDOWS_TEST_CHECKLIST.md)。
+
+安装完成后，Windows 可以直接双击：
+
+```text
+scripts\run_annotator_windows.cmd
+```
+
+或在 PowerShell 中运行：
+
+```powershell
+.\scripts\run_annotator.ps1
+.\scripts\run_annotator.ps1 -Folder "D:\dataset\rgb"
+.\scripts\run_annotator.ps1 -Language en
+```
+
+脚本会从自己的位置找到项目根目录，因此不要求 PowerShell 当前正好位于仓库目录。若虚拟环境不存在，它会明确提示先运行 `setup_windows.ps1`。
 
 ## 3. 配置高德 API Key
 
@@ -324,6 +342,8 @@ python scripts/launch_annotation_queue.py \
 
 ## 11. 标注器怎么用
 
+界面可在 **语言 / Language** 菜单中切换中英文。右侧 **逐图指导 / Image Guide** 是每张图的工作清单：先看纯净 RGB，再补路线和修 geometry，随后审核 Evidence，完成后保存并进入下一张。详细逐图规则见 [docs/ANNOTATION_GUIDE_BILINGUAL.md](docs/ANNOTATION_GUIDE_BILINGUAL.md)。
+
 | 操作 | 方法 |
 |---|---|
 | 打开图片文件夹 | Open Folder 或 `Cmd/Ctrl + O` |
@@ -348,6 +368,8 @@ python scripts/launch_annotation_queue.py \
 | 重做 | Cmd/Ctrl + Shift + Z |
 | 隐藏左右面板 | `Tab` / `Shift+Tab` |
 | 查看快捷键 | `?` |
+
+把鼠标停在顶部主要按钮或逐图指导按钮上满 3 秒，会出现一段不依赖专业术语的用途说明；鼠标移开、点击按钮或窗口隐藏时提示会立即关闭。
 
 Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misaligned`、`E Task Mismatch`、`U Unsure`。最关键的判断是：B 还能指出具体像素证据；C 主要依靠布局或常识推断。旧路线绝不会自动标成 A。
 

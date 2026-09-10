@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QGraphicsRectItem
@@ -10,7 +10,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from amap_tool.annotator import AnnotatorWindow, View
+from amap_tool.annotator import AnnotatorWindow, DelayedHelp, View
 from amap_tool.app_state import AppStateStore
 
 
@@ -215,6 +215,56 @@ def test_refresh_folder_adds_new_images_without_losing_current_document(tmp_path
 
     assert {record.image_id for record in window.dataset.records} == {"a", "b"}
     assert window.current_record.image_id == "a"
+    window.close()
+
+
+def test_language_switch_is_live_and_persisted(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    state_path = tmp_path / "state.json"
+    window = AnnotatorWindow(state_store=AppStateStore(state_path))
+
+    assert window.language == "zh_CN"
+    assert window.open_action.text() == "打开文件夹"
+    assert window.inspector_tabs.currentIndex() == 2
+    window.set_language("en_US")
+
+    assert window.open_action.text() == "Open Folder"
+    assert window.inspector_tabs.tabText(2) == "Image Guide"
+    assert AppStateStore(state_path).language() == "en_US"
+    window.close()
+
+
+def test_button_help_uses_three_second_delay(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    window = AnnotatorWindow(state_store=AppStateStore(tmp_path / "state.json"))
+    button = window.main_toolbar.widgetForAction(window.draw_action)
+
+    assert window.delayed_help.timer.interval() == DelayedHelp.DELAY_MS == 3000
+    assert button.property("delayedHelpKey") == "help_draw"
+    button.setEnabled(True)
+    QApplication.sendEvent(button, QEvent(QEvent.Type.Enter))
+    assert window.delayed_help.timer.isActive()
+    assert window.delayed_help.eventFilter(button, QEvent(QEvent.Type.ToolTip))
+    QApplication.sendEvent(button, QEvent(QEvent.Type.Leave))
+    assert not window.delayed_help.timer.isActive()
+    window.close()
+
+
+def test_image_guide_tracks_annotation_progress(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    Image.new("RGB", (64, 48), "green").save(tmp_path / "a.png")
+    window = AnnotatorWindow(state_store=AppStateStore(tmp_path / "state.json"))
+    window.open_folder(tmp_path)
+
+    assert "第 1 步" in window.guide_title.text()
+    edge_id = window.m.add_segment([[1, 1], [21, 1]])
+    window.changed(model_already_changed=True)
+    assert "第 2 步" in window.guide_title.text()
+    window.m.assign_evidence(edge_id, 0, 20, "clear_visual")
+    window.changed(model_already_changed=True)
+    assert "第 3 步" in window.guide_title.text()
+    assert window.save()
+    assert window.guide_title.text() == "本图已完成"
     window.close()
 
 

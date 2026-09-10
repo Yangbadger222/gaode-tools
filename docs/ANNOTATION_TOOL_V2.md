@@ -3,7 +3,7 @@
 这份说明给实际采图、标注和复核的同事使用。V2 的目标是把日常流程缩短为：
 
 ```text
-启动程序 → Open Folder → 画 / 修路线 → 审核 Evidence → Save & Next
+启动程序 → 打开文件夹 → 画 / 修路线 → 审核 Evidence → 保存并下一张
 ```
 
 不需要先做 manifest，不需要改 config，也不需要提前生成空 JSON。程序不会修改原始 RGB。
@@ -22,6 +22,8 @@ python scripts/launch_annotator.py
 python scripts/launch_annotator.py --folder /path/to/dataset
 ```
 
+界面默认中文，可在顶部 **语言** 菜单中即时切换中文 / English，选择会自动记住。也可以用 `--language zh` 或 `--language en` 指定本次语言。
+
 macOS 的 Qt Cocoa 平台插件会在程序导入 UI 前自动检查并清除异常的 hidden 标记。程序不修改系统 Qt，只处理本项目 `.venv` 里的插件。
 
 ## 2. Open Folder 能识别什么
@@ -37,13 +39,17 @@ macOS 的 Qt Cocoa 平台插件会在程序导入 UI 前自动检查并清除异
 
 ## 3. 界面
 
-- 顶部：Open Folder、Select、Draw、Edit、Evidence、Undo/Redo、Clean RGB、图层、Review View、Zoom、Save、Last/Next Image。
+- 顶部：打开文件夹、选择、画路线、编辑、Evidence、撤销/重做、纯净 RGB、对照审核、缩放、保存、上一张/下一张。
 - 左侧 Dataset：缩略图、image_id、审核状态、path 数和 Evidence 完成率；可搜索和筛选。
 - 中央 Canvas：始终占主要空间。
-- 右侧 Inspector / Review：只显示当前 path/span、Evidence 进度和图层开关。
+- 右侧属性 / 审核 / 逐图指导 / 图层 / 检查：显示当前 path/span、Evidence 进度、每张图下一步和图层开关。
 - 底部状态栏：原图尺寸、显示缩放、native 像素光标坐标和保存状态。
 
 左右面板用 `Tab` 和 `Shift+Tab` 隐藏或恢复。
+
+把鼠标停在主要按钮上满 3 秒，会出现“这个按钮做什么”的详细说明；鼠标移开或点击后立即消失，不会挡住连续标注。
+
+每张图的完整中文 / English 标注清单见 [每张图片的标注指导](ANNOTATION_GUIDE_BILINGUAL.md)。
 
 ## 4. 画和改 Complete Polyline
 
@@ -131,5 +137,7 @@ Dataset 菜单提供两个派生导出，不改源 annotation：
 - [Evidence mode](ui_v2/03_evidence_mode.png)
 - [Review View](ui_v2/04_review_view.png)
 - [400% 精细编辑与折叠面板](ui_v2/05_zoom_edit.png)
+- [中文逐图指导](ui_v2/06_image_guide_zh.png)
+- [English interface](ui_v2/07_english.png)
 
 这些截图由真实的 1024×1024 苏州卫星 RGB 与已有 draft geometry 离屏渲染生成；未对 RGB 做任何生成式处理。

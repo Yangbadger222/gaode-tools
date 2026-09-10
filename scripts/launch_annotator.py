@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--folder", help="optional image folder to open immediately")
     parser.add_argument("--region", help="optional legacy region.json")
     parser.add_argument("--annotation", help="legacy annotation JSON paired with --region")
+    parser.add_argument("--language", choices=("zh", "en"), help="optional UI language override")
     args = parser.parse_args()
     if args.folder and args.region:
         parser.error("choose either --folder or --region")
@@ -28,6 +29,8 @@ def main() -> int:
     app.setApplicationName(APP_TITLE)
     app.setOrganizationName("gaode-tools")
     window = AnnotatorWindow(args.region, args.annotation) if args.region else AnnotatorWindow()
+    if args.language:
+        window.set_language("zh_CN" if args.language == "zh" else "en_US")
     window.resize(1440, 900)
     window.show()
     if args.folder:

@@ -13,7 +13,7 @@ from .qt_runtime import prepare_qt_runtime
 
 prepare_qt_runtime()
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -55,6 +56,8 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -75,6 +78,7 @@ from .annotation_schema import (
 )
 from .app_state import AppStateStore
 from .dataset_index import DatasetIndex, ImageRecord, dataset_from_files, scan_dataset
+from .localization import normalize_language, text as localized_text
 from .paths import portable_name, resolve_data_path
 
 
@@ -112,6 +116,57 @@ def _path(points) -> QPainterPath:
     for point in points[1:]:
         result.lineTo(QPointF(float(point[0]), float(point[1])))
     return result
+
+
+class DelayedHelp(QObject):
+    """Show an explanatory tooltip only after a deliberate three-second hover."""
+
+    DELAY_MS = 3000
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+        self.pending: QWidget | None = None
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(self.DELAY_MS)
+        self.timer.timeout.connect(self._show_pending)
+
+    def register(self, widget: QWidget, help_key: str) -> None:
+        widget.setProperty("delayedHelpKey", help_key)
+        widget.setToolTip("")
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        event_type = event.type()
+        if event_type == QEvent.Type.Enter and watched.isEnabled():
+            self.pending = watched
+            self.timer.start()
+        elif event_type in (
+            QEvent.Type.Leave,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.Hide,
+            QEvent.Type.Destroy,
+        ):
+            if self.pending is watched:
+                self.pending = None
+                self.timer.stop()
+                QToolTip.hideText()
+        elif event_type == QEvent.Type.ToolTip:
+            # Suppress Qt's short-delay native tooltip; this filter owns timing.
+            return True
+        return super().eventFilter(watched, event)
+
+    def _show_pending(self) -> None:
+        widget = self.pending
+        if widget is None or not widget.isVisible() or not widget.isEnabled():
+            return
+        help_key = widget.property("delayedHelpKey")
+        body = self.window.t(str(help_key))
+        title = self.window.t("tooltip_title")
+        message = f"<b>{title}</b><br>{body}"
+        point = widget.mapToGlobal(QPoint(max(4, widget.width() // 2), widget.height() + 6))
+        QToolTip.showText(point, message, widget)
 
 
 class View(QGraphicsView):
@@ -277,26 +332,34 @@ class WelcomePage(QWidget):
         panel = QWidget()
         panel.setMaximumWidth(520)
         layout = QVBoxLayout(panel)
-        title = QLabel("AMap Path Annotator")
-        title.setObjectName("welcomeTitle")
-        subtitle = QLabel("Open an image folder and start annotating. Original RGB files stay unchanged.")
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("muted")
-        button = QPushButton("Open Folder")
-        button.setObjectName("primaryButton")
-        button.setMinimumHeight(40)
-        button.clicked.connect(window.choose_folder)
-        self.recent_title = QLabel("Recent Folders")
+        self.title = QLabel()
+        self.title.setObjectName("welcomeTitle")
+        self.subtitle = QLabel()
+        self.subtitle.setWordWrap(True)
+        self.subtitle.setObjectName("muted")
+        self.open_button = QPushButton()
+        self.open_button.setObjectName("primaryButton")
+        self.open_button.setMinimumHeight(42)
+        self.open_button.clicked.connect(window.choose_folder)
+        window.register_help(self.open_button, "help_open")
+        self.recent_title = QLabel()
         self.recent_layout = QVBoxLayout()
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        layout.addWidget(self.title)
+        layout.addWidget(self.subtitle)
         layout.addSpacing(18)
-        layout.addWidget(button)
+        layout.addWidget(self.open_button)
         layout.addSpacing(26)
         layout.addWidget(self.recent_title)
         layout.addLayout(self.recent_layout)
         outer.addWidget(panel, alignment=Qt.AlignmentFlag.AlignHCenter)
         outer.addStretch(3)
+        self.retranslate()
+
+    def retranslate(self) -> None:
+        self.title.setText(self.window.t("welcome_title"))
+        self.subtitle.setText(self.window.t("welcome_subtitle"))
+        self.open_button.setText(self.window.t("open_folder"))
+        self.recent_title.setText(self.window.t("recent_folders"))
 
     def refresh_recents(self, recents: list[dict]) -> None:
         while self.recent_layout.count():
@@ -307,8 +370,9 @@ class WelcomePage(QWidget):
         for recent in recents:
             path = Path(recent.get("path", ""))
             opened = str(recent.get("last_opened", ""))[:10]
-            row = QPushButton(f"{path.name or path}   {opened}  {'Missing' if not path.exists() else ''}".strip())
-            row.setToolTip(str(path))
+            missing = self.window.t("missing") if not path.exists() else ""
+            row = QPushButton(f"{path.name or path}   {opened}  {missing}".strip())
+            row.setStatusTip(str(path))
             row.setEnabled(path.exists())
             row.setObjectName("recentButton")
             row.clicked.connect(lambda _checked=False, value=path: self.window.open_folder(value))
@@ -318,7 +382,7 @@ class WelcomePage(QWidget):
                 wrapper = QWidget()
                 layout = QHBoxLayout(wrapper)
                 layout.setContentsMargins(0, 0, 0, 0)
-                remove = QPushButton("Remove")
+                remove = QPushButton(self.window.t("remove"))
                 remove.clicked.connect(lambda _checked=False, value=path: self.window.remove_recent(value))
                 layout.addWidget(row, 1)
                 layout.addWidget(remove)
@@ -328,23 +392,25 @@ class WelcomePage(QWidget):
 class DatasetSettingsDialog(QDialog):
     def __init__(self, dataset: DatasetIndex, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Dataset Settings")
+        self.t = parent.t if parent and hasattr(parent, "t") else lambda key, **values: localized_text("en_US", key, **values)
+        self.setWindowTitle(self.t("dataset_settings"))
         form = QFormLayout(self)
         self.root = QLineEdit(str(dataset.root))
         self.root.setReadOnly(True)
         self.images = QLineEdit(str(dataset.image_root))
         self.annotations = QLineEdit(str(dataset.annotation_root or ""))
         self.output = QLineEdit(str(dataset.output_root))
-        self.recursive = QCheckBox("Scan subfolders")
+        self.recursive = QCheckBox("扫描子文件夹" if getattr(parent, "language", "en_US") == "zh_CN" else "Scan subfolders")
         self.recursive.setChecked(dataset.recursive)
-        self.read_only = QCheckBox("Read Only / Sealed")
+        self.read_only = QCheckBox("只读 / 已封存" if getattr(parent, "language", "en_US") == "zh_CN" else "Read Only / Sealed")
         self.read_only.setChecked(dataset.read_only)
-        form.addRow("Root Folder", self.root)
-        form.addRow("Image Folder", self.images)
-        form.addRow("Annotation Folder", self.annotations)
-        form.addRow("Output Folder", self.output)
-        form.addRow("Recursive Scan", self.recursive)
-        form.addRow("Safety", self.read_only)
+        zh = getattr(parent, "language", "en_US") == "zh_CN"
+        form.addRow("根目录" if zh else "Root Folder", self.root)
+        form.addRow("图片目录" if zh else "Image Folder", self.images)
+        form.addRow("标注目录" if zh else "Annotation Folder", self.annotations)
+        form.addRow("输出目录" if zh else "Output Folder", self.output)
+        form.addRow("递归扫描" if zh else "Recursive Scan", self.recursive)
+        form.addRow("安全设置" if zh else "Safety", self.read_only)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -362,9 +428,12 @@ class AnnotatorWindow(QMainWindow):
         state_store: AppStateStore | None = None,
     ):
         super().__init__()
-        self.setWindowTitle(APP_TITLE)
         self.setAcceptDrops(True)
         self.state_store = state_store or AppStateStore()
+        self.language = normalize_language(self.state_store.language())
+        self.setWindowTitle(self.t("app_title"))
+        self.translatable_actions: list[QAction] = []
+        self.delayed_help = DelayedHelp(self)
         self.dataset: DatasetIndex | None = None
         self.queue = queue or []
         self.queue_index = 0
@@ -424,6 +493,23 @@ class AnnotatorWindow(QMainWindow):
             self.show_welcome()
 
     # ---------- UI construction ----------
+    def t(self, key: str, **values) -> str:
+        return localized_text(self.language, key, **values)
+
+    def evidence_label(self, evidence: str) -> str:
+        return self.t(f"evidence_{evidence}") if evidence else ""
+
+    def path_type_label(self, path_type: str) -> str:
+        return self.t({
+            "vehicle_road": "path_vehicle",
+            "pedestrian_path": "path_pedestrian",
+            "narrow_path": "path_narrow",
+            "service_path": "path_service",
+        }.get(path_type, path_type))
+
+    def register_help(self, widget: QWidget, help_key: str) -> None:
+        self.delayed_help.register(widget, help_key)
+
     def _build_ui(self) -> None:
         self.setStyleSheet(self._stylesheet())
         self.central_stack = QStackedWidget()
@@ -436,6 +522,7 @@ class AnnotatorWindow(QMainWindow):
         self._build_toolbar()
         self._build_menus()
         self._build_status_bar()
+        self.retranslate_ui()
         self.welcome.refresh_recents(self.state_store.recent_folders())
 
     def _build_canvas_page(self) -> QWidget:
@@ -446,12 +533,15 @@ class AnnotatorWindow(QMainWindow):
         self.review_clean = View(self, clean=True, interactive=False)
         self.review_overlay = View(self)
         review_splitter = QSplitter(Qt.Orientation.Horizontal)
-        for label_text, view in (("Clean RGB", self.review_clean), ("Annotated", self.review_overlay)):
+        self.review_labels = []
+        for label_key, view in (("clean_rgb", self.review_clean), ("annotated", self.review_overlay)):
             wrapper = QWidget()
             layout = QVBoxLayout(wrapper)
             layout.setContentsMargins(0, 0, 0, 0)
-            label = QLabel(label_text)
+            label = QLabel()
             label.setObjectName("canvasLabel")
+            label.setProperty("textKey", label_key)
+            self.review_labels.append(label)
             layout.addWidget(label)
             layout.addWidget(view, 1)
             review_splitter.addWidget(wrapper)
@@ -467,30 +557,30 @@ class AnnotatorWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 10, 10, 8)
-        self.dataset_name = QLabel("No folder open")
+        self.dataset_name = QLabel()
         self.dataset_name.setObjectName("panelTitle")
         self.dataset_summary = QLabel("")
         self.dataset_summary.setObjectName("muted")
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search image_id")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.populate_sidebar)
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(
-            [
-                "All",
-                "Unreviewed",
-                "Reviewed",
-                "Has Ambiguity",
-                "Has Context-only",
-                "Has Misalignment",
-                "Has Task mismatch",
-            ]
+        self.filter_keys = (
+            ("all", "filter_all"),
+            ("unreviewed", "filter_unreviewed"),
+            ("reviewed", "filter_reviewed"),
+            ("uncertain", "filter_ambiguity"),
+            ("context_only", "filter_context"),
+            ("draft_misalignment", "filter_misalignment"),
+            ("task_mismatch", "filter_mismatch"),
         )
-        self.filter_combo.currentTextChanged.connect(self.populate_sidebar)
+        for value, label_key in self.filter_keys:
+            self.filter_combo.addItem(self.t(label_key), value)
+        self.filter_combo.currentIndexChanged.connect(self.populate_sidebar)
         self.dataset_warnings = QPushButton("")
         self.dataset_warnings.setObjectName("warningButton")
         self.dataset_warnings.clicked.connect(self.show_dataset_issues)
+        self.register_help(self.dataset_warnings, "help_dataset_issues")
         self.image_list = QListWidget()
         self.image_list.setIconSize(QSize(72, 54))
         self.image_list.setSpacing(1)
@@ -502,7 +592,7 @@ class AnnotatorWindow(QMainWindow):
         layout.addWidget(self.filter_combo)
         layout.addWidget(self.dataset_warnings)
         layout.addWidget(self.image_list, 1)
-        self.sidebar_dock = QDockWidget("Dataset", self)
+        self.sidebar_dock = QDockWidget("", self)
         self.sidebar_dock.setObjectName("DatasetDock")
         self.sidebar_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.sidebar_dock.setWidget(panel)
@@ -511,44 +601,88 @@ class AnnotatorWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.sidebar_dock)
 
     def _build_inspector(self) -> None:
-        tabs = QTabWidget()
+        self.inspector_tabs = QTabWidget()
         properties_page = QWidget()
         self.form = QFormLayout(properties_page)
-        self.form.addRow(QLabel("No selected path"))
+        self.form.addRow(QLabel(self.t("no_selected_path")))
 
         review_page = QWidget()
         review_layout = QVBoxLayout(review_page)
-        self.review_progress = QLabel("Evidence reviewed: 0%")
-        self.review_details = QLabel("Unreviewed path length: 0 px")
+        self.review_progress = QLabel()
+        self.review_progress.setObjectName("progressTitle")
+        self.review_details = QLabel()
         self.review_details.setWordWrap(True)
-        hint = QLabel(
-            "B — Weak Visual\n图里还能指出具体视觉证据\n\n"
-            "C — Context Only\n主要靠布局 / 常识推断"
-        )
-        hint.setWordWrap(True)
-        hint.setObjectName("hintBox")
-        self.auto_advance = QCheckBox("Auto-advance after evidence label")
+        self.review_hint = QLabel()
+        self.review_hint.setWordWrap(True)
+        self.review_hint.setObjectName("hintBox")
+        self.auto_advance = QCheckBox()
         self.auto_advance.setChecked(True)
-        self.mark_reviewed_button = QPushButton("Mark image reviewed")
+        self.mark_reviewed_button = QPushButton()
+        self.mark_reviewed_button.setObjectName("confirmButton")
         self.mark_reviewed_button.clicked.connect(self.mark_image_reviewed)
+        self.register_help(self.mark_reviewed_button, "help_mark_reviewed")
         review_layout.addWidget(self.review_progress)
         review_layout.addWidget(self.review_details)
-        review_layout.addWidget(hint)
+        review_layout.addWidget(self.review_hint)
         review_layout.addWidget(self.auto_advance)
         review_layout.addWidget(self.mark_reviewed_button)
         review_layout.addStretch()
 
+        guide_page = QWidget()
+        guide_layout = QVBoxLayout(guide_page)
+        guide_layout.setContentsMargins(8, 10, 8, 8)
+        self.guide_image = QLabel()
+        self.guide_image.setObjectName("guideImage")
+        self.guide_title = QLabel()
+        self.guide_title.setObjectName("guideTitle")
+        self.guide_title.setWordWrap(True)
+        self.guide_body = QLabel()
+        self.guide_body.setWordWrap(True)
+        self.guide_body.setObjectName("guideBody")
+        self.guide_rules = QLabel()
+        self.guide_rules.setWordWrap(True)
+        self.guide_rules.setObjectName("guideRules")
+        self.guide_clean_button = QPushButton()
+        self.guide_draw_button = QPushButton()
+        self.guide_evidence_button = QPushButton()
+        self.guide_save_next_button = QPushButton()
+        self.guide_save_next_button.setObjectName("confirmButton")
+        self.guide_clean_button.clicked.connect(lambda: self.toggle_clean_rgb(not self.clean_rgb))
+        self.guide_draw_button.clicked.connect(lambda: self.set_mode("DRAW_PATH"))
+        self.guide_evidence_button.clicked.connect(lambda: self.set_mode("EVIDENCE"))
+        self.guide_save_next_button.clicked.connect(self.save_and_next)
+        self.register_help(self.guide_clean_button, "help_guide_clean")
+        self.register_help(self.guide_draw_button, "help_guide_draw")
+        self.register_help(self.guide_evidence_button, "help_guide_evidence")
+        self.register_help(self.guide_save_next_button, "help_guide_save_next")
+        guide_layout.addWidget(self.guide_image)
+        guide_layout.addSpacing(4)
+        guide_layout.addWidget(self.guide_title)
+        guide_layout.addWidget(self.guide_body)
+        guide_layout.addSpacing(8)
+        guide_layout.addWidget(self.guide_rules)
+        guide_layout.addSpacing(8)
+        for button in (
+            self.guide_clean_button,
+            self.guide_draw_button,
+            self.guide_evidence_button,
+            self.guide_save_next_button,
+        ):
+            guide_layout.addWidget(button)
+        guide_layout.addStretch()
+
         layers_page = QWidget()
         layers_layout = QFormLayout(layers_page)
         self.layer_checks = {}
-        for key, label in (
-            ("rgb", "RGB"),
-            ("draft", "Draft"),
-            ("manual", "Manual Polyline"),
-            ("evidence", "Evidence"),
-            ("control_points", "Control Points"),
+        for key, label_key in (
+            ("rgb", "layer_rgb"),
+            ("draft", "layer_draft"),
+            ("manual", "layer_manual"),
+            ("evidence", "layer_evidence"),
+            ("control_points", "layer_points"),
         ):
-            check = QCheckBox(label)
+            check = QCheckBox(self.t(label_key))
+            check.setProperty("textKey", label_key)
             check.setChecked(self.layer_state[key])
             check.toggled.connect(lambda checked, name=key: self.set_layer(name, checked))
             self.layer_checks[key] = check
@@ -562,172 +696,312 @@ class AnnotatorWindow(QMainWindow):
         self.evidence_slider.setValue(round(self.evidence_opacity * 100))
         self.evidence_slider.valueChanged.connect(self.set_evidence_opacity)
         self.interpolation_combo = QComboBox()
-        self.interpolation_combo.addItems(["Smooth", "Pixel"])
-        self.interpolation_combo.currentTextChanged.connect(self.set_interpolation)
-        layers_layout.addRow("Draft opacity", self.draft_slider)
-        layers_layout.addRow("Evidence opacity", self.evidence_slider)
-        layers_layout.addRow("Display", self.interpolation_combo)
+        self.interpolation_combo.addItem(self.t("smooth"), "smooth")
+        self.interpolation_combo.addItem(self.t("pixel"), "pixel")
+        self.interpolation_combo.currentIndexChanged.connect(
+            lambda _index: self.set_interpolation(self.interpolation_combo.currentData())
+        )
+        layers_layout.addRow(self.t("draft_opacity"), self.draft_slider)
+        layers_layout.addRow(self.t("evidence_opacity"), self.evidence_slider)
+        layers_layout.addRow(self.t("display"), self.interpolation_combo)
+        self.layers_layout = layers_layout
 
         self.warning_list = QListWidget()
-        tabs.addTab(properties_page, "Inspector")
-        tabs.addTab(review_page, "Review")
-        tabs.addTab(layers_page, "Layers")
-        tabs.addTab(self.warning_list, "Checks")
-        self.inspector_dock = QDockWidget("Inspector / Review", self)
+        self.inspector_tabs.addTab(properties_page, "")
+        self.inspector_tabs.addTab(review_page, "")
+        self.inspector_tabs.addTab(guide_page, "")
+        self.inspector_tabs.addTab(layers_page, "")
+        self.inspector_tabs.addTab(self.warning_list, "")
+        self.inspector_tabs.setCurrentIndex(2)
+        self.inspector_dock = QDockWidget("", self)
         self.inspector_dock.setObjectName("InspectorDock")
         self.inspector_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        self.inspector_dock.setWidget(tabs)
-        self.inspector_dock.setMinimumWidth(250)
-        self.inspector_dock.setMaximumWidth(350)
+        self.inspector_dock.setWidget(self.inspector_tabs)
+        self.inspector_dock.setMinimumWidth(270)
+        self.inspector_dock.setMaximumWidth(380)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.inspector_dock)
 
-    def _action(self, text, callback, shortcut=None, tooltip=None, checkable=False) -> QAction:
-        action = QAction(text, self)
+    def _action(self, text_key, callback, shortcut=None, help_key=None, checkable=False) -> QAction:
+        action = QAction(self.t(text_key), self)
+        action.setProperty("textKey", text_key)
+        action.setProperty("helpKey", help_key or "")
         action.setCheckable(checkable)
         if shortcut:
             action.setShortcut(QKeySequence(shortcut))
-        action.setToolTip(tooltip or text)
-        action.setStatusTip(tooltip or text)
+        action.setStatusTip("")
+        action.setToolTip("")
         action.triggered.connect(callback)
+        self.translatable_actions.append(action)
         return action
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
+        self.main_toolbar = toolbar
         toolbar.setObjectName("MainToolbar")
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         toolbar.setIconSize(QSize(16, 16))
         self.addToolBar(toolbar)
-        self.open_action = self._action("Open Folder", self.choose_folder, "Ctrl+O", "Open an ordinary image folder")
+        self.open_action = self._action("open_folder", self.choose_folder, "Ctrl+O", "help_open")
         toolbar.addAction(self.open_action)
         toolbar.addSeparator()
 
         self.mode_group = QActionGroup(self)
         self.mode_group.setExclusive(True)
-        self.select_action = self._action("Select", lambda: self.set_mode("SELECT"), "V", "Select and edit paths", True)
-        self.draw_action = self._action("Draw", lambda: self.set_mode("DRAW_PATH"), "P", "Draw a complete path", True)
-        self.edit_action = self._action("Edit", lambda: self.set_mode("EDIT"), None, "Edit control points", True)
-        self.evidence_action = self._action("Evidence", lambda: self.set_mode("EVIDENCE"), "X", "Brush a local evidence span", True)
+        self.select_action = self._action("select", lambda: self.set_mode("SELECT"), "V", "help_select", True)
+        self.draw_action = self._action("draw", lambda: self.set_mode("DRAW_PATH"), "P", "help_draw", True)
+        self.edit_action = self._action("edit", lambda: self.set_mode("EDIT"), None, "help_edit", True)
+        self.evidence_action = self._action("evidence", lambda: self.set_mode("EVIDENCE"), "X", "help_evidence", True)
         for action in (self.select_action, self.draw_action, self.edit_action, self.evidence_action):
             self.mode_group.addAction(action)
             toolbar.addAction(action)
         self.select_action.setChecked(True)
         toolbar.addSeparator()
 
-        self.undo_action = self._action("Undo", self.undo, "Ctrl+Z")
-        self.redo_action = self._action("Redo", self.redo, "Ctrl+Shift+Z")
+        self.undo_action = self._action("undo", self.undo, "Ctrl+Z", "help_undo")
+        self.redo_action = self._action("redo", self.redo, "Ctrl+Shift+Z", "help_redo")
         toolbar.addAction(self.undo_action)
         toolbar.addAction(self.redo_action)
         toolbar.addSeparator()
-        self.clean_action = self._action("Clean RGB", self.toggle_clean_rgb, "`", "Show only the untouched RGB", True)
-        self.draft_action = self._action("Draft", self.toggle_draft_action, None, "Show/hide draft geometry", True)
+        self.clean_action = self._action("clean_rgb", self.toggle_clean_rgb, "`", "help_clean", True)
+        self.draft_action = self._action("draft", self.toggle_draft_action, None, "help_draft", True)
         self.draft_action.setChecked(True)
-        self.evidence_layer_action = self._action("Evidence color", self.toggle_evidence_action, None, "Show/hide evidence colors", True)
+        self.evidence_layer_action = self._action("evidence_color", self.toggle_evidence_action, None, "help_evidence_color", True)
         self.evidence_layer_action.setChecked(True)
-        self.review_action = self._action("Review View", self.toggle_review_view, "R", "Side-by-side clean and annotated views", True)
+        self.review_action = self._action("review_view", self.toggle_review_view, "R", "help_review_view", True)
         toolbar.addAction(self.clean_action)
-        toolbar.addAction(self.draft_action)
-        toolbar.addAction(self.evidence_layer_action)
         toolbar.addAction(self.review_action)
-        self.clean_badge = QLabel("CLEAN RGB")
+        self.clean_badge = QLabel()
         self.clean_badge.setObjectName("cleanBadge")
         self.clean_badge.hide()
         toolbar.addWidget(self.clean_badge)
         toolbar.addSeparator()
         self.zoom_combo = QComboBox()
-        self.zoom_combo.addItems(["Fit", "100%", "200%", "400%", "800%"])
-        self.zoom_combo.setToolTip("Canvas zoom; display scaling only")
+        self.zoom_combo.addItems([self.t("fit"), "100%", "200%", "400%", "800%"])
         self.zoom_combo.activated.connect(self.zoom_preset)
+        self.register_help(self.zoom_combo, "help_zoom")
         toolbar.addWidget(self.zoom_combo)
         toolbar.addSeparator()
-        self.save_action = self._action("Save", self.save, "Ctrl+S", "Safe atomic save")
-        self.previous_action = self._action("Last Image", lambda: self.navigate(-1), None, "Save changes and open previous image")
-        self.next_action = self._action("Next Image", lambda: self.navigate(1), None, "Save changes and open next image")
+        self.save_action = self._action("save", self.save, "Ctrl+S", "help_save")
+        self.previous_action = self._action("last_image", lambda: self.navigate(-1), None, "help_previous")
+        self.next_action = self._action("next_image", lambda: self.navigate(1), None, "help_next")
         toolbar.addAction(self.save_action)
         toolbar.addAction(self.previous_action)
         toolbar.addAction(self.next_action)
         self.nav_label = QLabel("")
         self.nav_label.setObjectName("navLabel")
-        toolbar.addWidget(self.nav_label)
 
-        self.sidebar_toggle_action = self._action("Toggle Dataset Sidebar", self.toggle_sidebar, "Tab")
-        self.inspector_toggle_action = self._action("Toggle Inspector", self.toggle_inspector, "Shift+Tab")
+        self.sidebar_toggle_action = self._action("toggle_dataset", self.toggle_sidebar, "Tab")
+        self.inspector_toggle_action = self._action("toggle_inspector", self.toggle_inspector, "Shift+Tab")
         self.addAction(self.sidebar_toggle_action)
         self.addAction(self.inspector_toggle_action)
-        self.help_action = self._action("Keyboard Shortcuts", self.help, "?")
+        self.help_action = self._action("shortcuts", self.help, "?")
         self.addAction(self.help_action)
-        self.fit_action = self._action("Fit Image", self.fit_image, "F")
+        self.fit_action = self._action("fit_image", self.fit_image, "F")
         self.addAction(self.fit_action)
         for value in (1, 2, 4, 8):
-            self.addAction(self._action(f"Zoom {value}00%", lambda _checked=False, scale=value: self.set_zoom(scale), str(value)))
-        self.save_next_action = self._action("Save & Next", self.save_and_next, "Ctrl+Return")
+            zoom_action = QAction(f"Zoom {value}00%", self)
+            zoom_action.setShortcut(QKeySequence(str(value)))
+            zoom_action.triggered.connect(lambda _checked=False, scale=value: self.set_zoom(scale))
+            self.addAction(zoom_action)
+        self.save_next_action = self._action("save_next", self.save_and_next, "Ctrl+Return")
         self.addAction(self.save_next_action)
-        self.search_action = self._action("Search", self.focus_search, "Ctrl+F")
+        self.search_action = self._action("search", self.focus_search, "Ctrl+F")
         self.addAction(self.search_action)
 
+        for action in toolbar.actions():
+            widget = toolbar.widgetForAction(action)
+            help_key = action.property("helpKey")
+            if isinstance(widget, QToolButton) and help_key:
+                self.register_help(widget, str(help_key))
+        for action, object_name in (
+            (self.open_action, "openToolButton"),
+            (self.save_action, "saveToolButton"),
+            (self.previous_action, "navigationToolButton"),
+            (self.next_action, "navigationToolButton"),
+        ):
+            widget = toolbar.widgetForAction(action)
+            if widget:
+                widget.setObjectName(object_name)
+
     def _build_menus(self) -> None:
-        dataset_menu = self.menuBar().addMenu("Dataset")
-        dataset_menu.addAction(self.open_action)
-        self.refresh_action = self._action("Refresh Folder", self.refresh_folder, "Ctrl+R")
-        self.settings_action = self._action("Dataset Settings", self.dataset_settings)
-        self.info_action = self._action("Dataset Info", self.dataset_info)
-        dataset_menu.addAction(self.refresh_action)
-        dataset_menu.addAction(self.settings_action)
-        dataset_menu.addAction(self.info_action)
-        dataset_menu.addSeparator()
-        dataset_menu.addAction(self._action("Export for Training…", lambda: self.export_dataset(False)))
-        dataset_menu.addAction(self._action("Export Trusted Evaluation…", lambda: self.export_dataset(True)))
-        edit_menu = self.menuBar().addMenu("Edit")
-        edit_menu.addAction(self.undo_action)
-        edit_menu.addAction(self.redo_action)
-        edit_menu.addAction(self._action("Delete Selection", self.delete, "Delete"))
-        view_menu = self.menuBar().addMenu("View")
-        view_menu.addAction(self.clean_action)
-        view_menu.addAction(self.review_action)
-        view_menu.addAction(self.sidebar_toggle_action)
-        view_menu.addAction(self.inspector_toggle_action)
-        help_menu = self.menuBar().addMenu("Help")
-        help_menu.addAction(self.help_action)
+        self.dataset_menu = self.menuBar().addMenu("")
+        self.dataset_menu.addAction(self.open_action)
+        self.refresh_action = self._action("refresh_folder", self.refresh_folder, "Ctrl+R")
+        self.settings_action = self._action("dataset_settings", self.dataset_settings)
+        self.info_action = self._action("dataset_info", self.dataset_info)
+        self.dataset_menu.addAction(self.refresh_action)
+        self.dataset_menu.addAction(self.settings_action)
+        self.dataset_menu.addAction(self.info_action)
+        self.dataset_menu.addSeparator()
+        self.dataset_menu.addAction(self._action("export_training", lambda: self.export_dataset(False)))
+        self.dataset_menu.addAction(self._action("export_eval", lambda: self.export_dataset(True)))
+        self.edit_menu = self.menuBar().addMenu("")
+        self.edit_menu.addAction(self.undo_action)
+        self.edit_menu.addAction(self.redo_action)
+        self.edit_menu.addAction(self._action("delete_selection", self.delete, "Delete"))
+        self.view_menu = self.menuBar().addMenu("")
+        self.view_menu.addAction(self.clean_action)
+        self.view_menu.addAction(self.review_action)
+        self.view_menu.addAction(self.draft_action)
+        self.view_menu.addAction(self.evidence_layer_action)
+        self.view_menu.addAction(self.sidebar_toggle_action)
+        self.view_menu.addAction(self.inspector_toggle_action)
+        self.language_menu = self.menuBar().addMenu("")
+        self.zh_action = QAction("中文", self)
+        self.en_action = QAction("English", self)
+        self.zh_action.setCheckable(True)
+        self.en_action.setCheckable(True)
+        language_group = QActionGroup(self)
+        language_group.setExclusive(True)
+        language_group.addAction(self.zh_action)
+        language_group.addAction(self.en_action)
+        self.zh_action.triggered.connect(lambda: self.set_language("zh_CN"))
+        self.en_action.triggered.connect(lambda: self.set_language("en_US"))
+        self.language_menu.addAction(self.zh_action)
+        self.language_menu.addAction(self.en_action)
+        self.help_menu = self.menuBar().addMenu("")
+        self.help_menu.addAction(self.help_action)
 
     def _build_status_bar(self) -> None:
         status = QStatusBar(self)
         self.setStatusBar(status)
-        self.status_message = QLabel("Ready")
-        self.native_label = QLabel("Native image: —")
-        self.zoom_label = QLabel("Zoom: —")
-        self.cursor_label = QLabel("Cursor: —")
+        self.status_message = QLabel()
+        self.native_label = QLabel()
+        self.zoom_label = QLabel()
+        self.cursor_label = QLabel()
         self.save_label = QLabel("")
         status.addWidget(self.status_message, 1)
+        status.addPermanentWidget(self.nav_label)
         for label in (self.native_label, self.zoom_label, self.cursor_label, self.save_label):
             label.setObjectName("statusValue")
             status.addPermanentWidget(label)
 
+    def set_language(self, language: str) -> None:
+        language = normalize_language(language)
+        if language == self.language:
+            return
+        self.language = language
+        self.state_store.set_language(language)
+        self.retranslate_ui()
+
+    def retranslate_ui(self) -> None:
+        current = self.current_record.image_id if self.current_record else self.region.get("region_id", "")
+        title = self.t("app_title")
+        self.setWindowTitle(f"{title} — {current}" if current else title)
+        self.welcome.retranslate()
+        self.welcome.refresh_recents(self.state_store.recent_folders())
+        for action in self.translatable_actions:
+            text_key = action.property("textKey")
+            if text_key:
+                action.setText(self.t(str(text_key)))
+            help_key = action.property("helpKey")
+        for label in self.review_labels:
+            label.setText(self.t(str(label.property("textKey"))))
+        self.dataset_name.setText(self.dataset.root.name if self.dataset else self.t("no_folder"))
+        self.search.setPlaceholderText(self.t("search_image"))
+        current_filter = self.filter_combo.currentData()
+        self.filter_combo.blockSignals(True)
+        for index, (_value, label_key) in enumerate(self.filter_keys):
+            self.filter_combo.setItemText(index, self.t(label_key))
+        self.filter_combo.setCurrentIndex(max(0, self.filter_combo.findData(current_filter)))
+        self.filter_combo.blockSignals(False)
+        self.sidebar_dock.setWindowTitle(self.t("dataset"))
+        self.inspector_dock.setWindowTitle(self.t("inspector_review"))
+        for index, key in enumerate(("inspector", "review", "guide", "layers", "checks")):
+            self.inspector_tabs.setTabText(index, self.t(key))
+        self.review_hint.setText(self.t("review_hint"))
+        self.auto_advance.setText(self.t("auto_advance"))
+        self.mark_reviewed_button.setText(self.t("mark_reviewed"))
+        for check in self.layer_checks.values():
+            check.setText(self.t(str(check.property("textKey"))))
+        self.layers_layout.labelForField(self.draft_slider).setText(self.t("draft_opacity"))
+        self.layers_layout.labelForField(self.evidence_slider).setText(self.t("evidence_opacity"))
+        self.layers_layout.labelForField(self.interpolation_combo).setText(self.t("display"))
+        interpolation = self.interpolation_combo.currentData()
+        self.interpolation_combo.blockSignals(True)
+        self.interpolation_combo.setItemText(0, self.t("smooth"))
+        self.interpolation_combo.setItemText(1, self.t("pixel"))
+        self.interpolation_combo.setCurrentIndex(max(0, self.interpolation_combo.findData(interpolation)))
+        self.interpolation_combo.blockSignals(False)
+        self.zoom_combo.setItemText(0, self.t("fit"))
+        self.clean_badge.setText(self.t("clean_rgb").upper())
+        self.guide_clean_button.setText(self.t("guide_clean"))
+        self.guide_draw_button.setText(self.t("guide_draw"))
+        self.guide_evidence_button.setText(self.t("guide_evidence"))
+        self.guide_save_next_button.setText(self.t("guide_save_next"))
+        self.guide_rules.setText(self.t("guide_rules"))
+        self.dataset_menu.setTitle(self.t("menu_dataset"))
+        self.edit_menu.setTitle(self.t("menu_edit"))
+        self.view_menu.setTitle(self.t("menu_view"))
+        self.language_menu.setTitle(self.t("menu_language"))
+        self.help_menu.setTitle(self.t("menu_help"))
+        self.zh_action.setChecked(self.language == "zh_CN")
+        self.en_action.setChecked(self.language == "en_US")
+        self.status_message.setText(self.t("ready"))
+        image = self.m.data.get("image", {}) if self.m else {}
+        self.native_label.setText(self.t(
+            "native_image", width=image.get("width", "—"), height=image.get("height", "—")
+        ))
+        self.zoom_label.setText(self.t("zoom", percent=self.active_view().transform().m11() * 100))
+        self.cursor_label.setText(self.t("cursor", x=0.0, y=0.0).replace("0.0", "—"))
+        if self.dataset:
+            self.populate_sidebar()
+            self.update_dataset_summary()
+        elif self.queue:
+            self.populate_region_sidebar()
+        self.update_navigation()
+        self.update_inspector()
+        self.update_image_guide()
+
     @staticmethod
     def _stylesheet() -> str:
         return """
-        QMainWindow, QWidget { background: #f4f2ed; color: #292927; font-size: 13px; }
-        QMenuBar, QMenu, QToolBar, QStatusBar { background: #eceae5; border-color: #d7d4cd; }
-        QToolBar { spacing: 2px; padding: 4px 6px; border-bottom: 1px solid #d7d4cd; }
-        QToolButton { padding: 5px 8px; border: 1px solid transparent; border-radius: 4px; }
-        QToolButton:hover { background: #dedbd4; }
-        QToolButton:checked { background: #d2d8d2; border-color: #aeb8af; }
-        QDockWidget::title { background: #e8e6e0; padding: 6px; border-bottom: 1px solid #d7d4cd; }
-        QLineEdit, QComboBox, QListWidget { background: #faf9f6; border: 1px solid #cfccc5; border-radius: 4px; padding: 4px; }
-        QListWidget::item { padding: 5px 3px; border-bottom: 1px solid #e4e1da; }
-        QListWidget::item:selected { background: #dbe1db; color: #222; }
-        QPushButton { background: #e8e6e0; border: 1px solid #c9c6bf; border-radius: 5px; padding: 6px 10px; text-align: left; }
-        QPushButton:hover { background: #dedbd4; }
-        #primaryButton { background: #4f6857; color: white; border: none; text-align: center; font-weight: 600; }
+        QMainWindow, QWidget { background: #f6f5f1; color: #262925; font-size: 13px; }
+        QMenuBar, QMenu, QToolBar, QStatusBar { background: #eeece6; border-color: #d5d1c8; }
+        QMenuBar { padding: 2px 5px; }
+        QMenuBar::item { padding: 5px 9px; border-radius: 5px; }
+        QMenuBar::item:selected, QMenu::item:selected { background: #dce4dc; color: #263b2d; }
+        QMenu::item { padding: 7px 30px 7px 12px; }
+        QToolBar { spacing: 3px; padding: 6px 8px; border-bottom: 1px solid #d5d1c8; }
+        QToolBar::separator { background: #d4d0c7; width: 1px; margin: 5px 5px; }
+        QToolButton { padding: 6px 9px; border: 1px solid transparent; border-radius: 6px; font-weight: 500; }
+        QToolButton:hover { background: #e0ded7; border-color: #d2cec5; }
+        QToolButton:pressed { background: #d5d2ca; }
+        QToolButton:checked { background: #d8e2d9; border-color: #aebdaf; color: #284733; }
+        #openToolButton { background: #e5ebe5; border-color: #c4d0c5; color: #2e5139; }
+        #saveToolButton, #navigationToolButton { background: #f7f6f2; border-color: #d0ccc3; }
+        QDockWidget::title { background: #eae8e2; padding: 8px 10px; border-bottom: 1px solid #d5d1c8; font-weight: 600; }
+        QLineEdit, QComboBox, QListWidget { background: #fcfbf8; border: 1px solid #cfcbc2; border-radius: 6px; padding: 5px; selection-background-color: #d4dfd5; }
+        QLineEdit:focus, QComboBox:focus, QListWidget:focus { border-color: #839b87; }
+        QListWidget::item { padding: 7px 4px; border-bottom: 1px solid #e5e2da; border-radius: 4px; }
+        QListWidget::item:hover { background: #f0eee8; }
+        QListWidget::item:selected { background: #dce5dd; color: #203b29; }
+        QPushButton { background: #eceae4; border: 1px solid #cbc7be; border-radius: 7px; padding: 7px 11px; text-align: left; }
+        QPushButton:hover { background: #e1dfd8; border-color: #bdb8ae; }
+        QPushButton:pressed { background: #d7d4cc; }
+        #primaryButton { background: #466653; color: white; border: none; text-align: center; font-weight: 600; padding: 10px 16px; }
+        #primaryButton:hover { background: #3e5c49; }
+        #confirmButton { background: #e1ebe2; border-color: #b8cbb9; color: #284b33; font-weight: 600; }
         #recentButton { background: transparent; border: none; padding: 7px 2px; }
         #warningButton { color: #765a2e; background: transparent; border: none; padding: 3px 0; }
-        #welcomeTitle { font-size: 24px; font-weight: 600; }
+        #welcomeTitle { font-size: 27px; font-weight: 650; color: #243c2b; }
         #panelTitle { font-size: 15px; font-weight: 600; }
         #muted { color: #6f6d68; }
-        #hintBox { color: #4d4b47; background: #ebe8e1; border: 1px solid #d7d3ca; border-radius: 5px; padding: 9px; }
+        #hintBox { color: #454943; background: #ecefe9; border: 1px solid #d0d9d0; border-radius: 7px; padding: 10px; }
         #canvasLabel { background: #343431; color: #e4e2dc; padding: 4px 8px; }
-        #cleanBadge { color: #385845; background: #d7e1d8; border: 1px solid #b7c6b9; border-radius: 3px; padding: 3px 6px; font-size: 11px; }
+        #cleanBadge { color: #31563e; background: #d9e5da; border: 1px solid #b7cab9; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 600; }
         #navLabel, #statusValue { color: #65635f; padding: 0 6px; }
-        QTabBar::tab { padding: 6px 8px; }
+        #progressTitle { font-size: 15px; font-weight: 600; color: #304d39; padding: 4px 0; }
+        #guideImage { color: #74716a; font-size: 11px; }
+        #guideTitle { font-size: 16px; font-weight: 650; color: #294833; padding: 3px 0; }
+        #guideBody { color: #454943; line-height: 1.35; }
+        #guideRules { color: #444742; background: #efeee8; border: 1px solid #d9d5cc; border-radius: 8px; padding: 11px; }
+        QTabWidget::pane { border: none; border-top: 1px solid #d9d5cc; }
+        QTabBar::tab { padding: 7px 9px; color: #65635e; }
+        QTabBar::tab:selected { color: #2c4c36; border-bottom: 2px solid #63806b; font-weight: 600; }
+        QStatusBar { border-top: 1px solid #d5d1c8; }
+        QToolTip { background: #26312a; color: #f8f6ef; border: 1px solid #53665a; border-radius: 5px; padding: 8px; }
         """
 
     # ---------- dataset opening ----------
@@ -767,7 +1041,9 @@ class AnnotatorWindow(QMainWindow):
             action.setEnabled(enabled)
 
     def choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Open image folder")
+        folder = QFileDialog.getExistingDirectory(
+            self, "打开图片文件夹" if self.language == "zh_CN" else "Open image folder"
+        )
         if folder:
             self.open_folder(folder)
 
@@ -804,7 +1080,7 @@ class AnnotatorWindow(QMainWindow):
             and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
         ):
             dialog = DatasetSettingsDialog(dataset, self)
-            dialog.setWindowTitle("Confirm Folder Mapping")
+            dialog.setWindowTitle("确认文件夹对应关系" if self.language == "zh_CN" else "Confirm Folder Mapping")
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             dataset = scan_dataset(
@@ -825,7 +1101,13 @@ class AnnotatorWindow(QMainWindow):
         self.update_dataset_summary()
         if not dataset.records:
             self.show_welcome()
-            QMessageBox.warning(self, "Open Folder", "No supported, readable images were found.\n\nPNG, JPEG, TIFF and WebP are supported.")
+            QMessageBox.warning(
+                self,
+                self.t("open_folder"),
+                "没有找到可读取的图片。\n\n支持 PNG、JPEG、TIFF 和 WebP。"
+                if self.language == "zh_CN"
+                else "No supported, readable images were found.\n\nPNG, JPEG, TIFF and WebP are supported.",
+            )
             return
         target_id = previous.get("last_image_id")
         target = dataset.record_by_id(target_id) if target_id else None
@@ -835,7 +1117,9 @@ class AnnotatorWindow(QMainWindow):
         self.show_editor(fit=not bool(previous))
         self.restore_session_view(previous)
         self.maybe_restore_recovery()
-        self.status_message.setText(f"{len(dataset.records)} images loaded")
+        self.status_message.setText(
+            f"已加载 {len(dataset.records)} 张图片" if self.language == "zh_CN" else f"{len(dataset.records)} images loaded"
+        )
         self.maybe_show_onboarding()
 
     def load_record(self, record: ImageRecord) -> None:
@@ -853,7 +1137,11 @@ class AnnotatorWindow(QMainWindow):
             try:
                 raw = json.loads(source.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                QMessageBox.warning(self, "Annotation", f"Could not read annotation; opening a clean session.\n{exc}")
+                QMessageBox.warning(
+                    self,
+                    "标注文件" if self.language == "zh_CN" else "Annotation",
+                    (f"无法读取标注，将打开空白标注。\n{exc}" if self.language == "zh_CN" else f"Could not read annotation; opening a clean session.\n{exc}"),
+                )
                 raw = empty_document(record.image_id, self.record_source_name(record), record.width, record.height, region=record.region)
             self.annotation_source = source
         else:
@@ -869,7 +1157,7 @@ class AnnotatorWindow(QMainWindow):
         self.source_was_legacy = was_legacy
         self.out = record.output_annotation_path
         self._install_document(document)
-        self.setWindowTitle(f"{APP_TITLE} — {record.image_id}")
+        self.setWindowTitle(f"{self.t('app_title')} — {record.image_id}")
         self.select_sidebar_record(record.image_id)
 
     def record_source_name(self, record: ImageRecord) -> str:
@@ -924,9 +1212,9 @@ class AnnotatorWindow(QMainWindow):
         self.current_record = None
         self.dataset = None
         self._install_document(document)
-        self.dataset_name.setText("Assigned regions")
+        self.dataset_name.setText(self.t("assigned_regions"))
         self.populate_region_sidebar()
-        self.setWindowTitle(f"{APP_TITLE} — {self.region['region_id']}")
+        self.setWindowTitle(f"{self.t('app_title')} — {self.region['region_id']}")
         self.update_navigation()
 
     def _install_document(self, document: dict) -> None:
@@ -976,7 +1264,7 @@ class AnnotatorWindow(QMainWindow):
         if target and not target.missing:
             self.load_record(target)
             self.render()
-        self.status_message.setText("Folder refreshed")
+        self.status_message.setText("文件夹已刷新" if self.language == "zh_CN" else "Folder refreshed")
 
     # ---------- sidebar ----------
     def populate_sidebar(self, *_args) -> None:
@@ -986,16 +1274,22 @@ class AnnotatorWindow(QMainWindow):
         self._building_sidebar = True
         self.image_list.clear()
         search = self.search.text().strip().lower()
-        filter_name = self.filter_combo.currentText()
+        filter_name = self.filter_combo.currentData() or "all"
         for record in self.dataset.records:
             if search and search not in record.image_id.lower():
                 continue
             if not self.record_matches_filter(record, filter_name):
                 continue
-            status = "Reviewed" if record.review_status == "reviewed" else "Unreviewed"
+            status = self.t("status_reviewed") if record.review_status == "reviewed" else self.t("status_unreviewed")
             if record.missing:
-                status = "Missing"
-            text = f"{record.image_id}\n● {status}   {record.path_count} paths\nEvidence {record.evidence_percent:.0f}%"
+                status = self.t("status_missing")
+            text = self.t(
+                "sidebar_item",
+                image_id=record.image_id,
+                status=status,
+                paths=record.path_count,
+                percent=record.evidence_percent,
+            )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record.image_id)
             item.setToolTip(str(record.source_path))
@@ -1022,28 +1316,27 @@ class AnnotatorWindow(QMainWindow):
                 region_id = region.get("region_id", Path(region_file).parent.name)
             except (OSError, json.JSONDecodeError):
                 count, region_id = 0, Path(region_file).parent.name
-            item = QListWidgetItem(f"{region_id}\n{count} RGB tiles")
+            item = QListWidgetItem(f"{region_id}\n{self.t('region_tiles', count=count)}")
             item.setData(Qt.ItemDataRole.UserRole, index)
             self.image_list.addItem(item)
             if index == self.queue_index:
                 self.image_list.setCurrentItem(item)
         self._building_sidebar = False
-        self.dataset_summary.setText(f"{len(self.queue)} regions")
+        self.dataset_summary.setText(self.t("region_count", count=len(self.queue)))
         self.dataset_warnings.hide()
 
     @staticmethod
     def record_matches_filter(record: ImageRecord, filter_name: str) -> bool:
-        if filter_name == "Unreviewed":
+        if filter_name == "unreviewed":
             return record.review_status != "reviewed"
-        if filter_name == "Reviewed":
+        if filter_name == "reviewed":
             return record.review_status == "reviewed"
-        mapping = {
-            "Has Ambiguity": "uncertain",
-            "Has Context-only": "context_only",
-            "Has Misalignment": "draft_misalignment",
-            "Has Task mismatch": "task_mismatch",
-        }
-        return mapping.get(filter_name) in record.evidence_flags if filter_name in mapping else True
+        return filter_name in record.evidence_flags if filter_name in {
+            "uncertain",
+            "context_only",
+            "draft_misalignment",
+            "task_mismatch",
+        } else True
 
     def sidebar_selection_changed(self, current, _previous) -> None:
         if self._building_sidebar or current is None:
@@ -1075,23 +1368,28 @@ class AnnotatorWindow(QMainWindow):
         if not self.dataset:
             return
         total = len(self.dataset.records)
-        self.dataset_summary.setText(
-            f"{total} images · {self.dataset.annotated_count} annotated · {total - self.dataset.reviewed_count} unreviewed"
-        )
+        self.dataset_summary.setText(self.t(
+            "dataset_summary",
+            total=total,
+            annotated=self.dataset.annotated_count,
+            unreviewed=total - self.dataset.reviewed_count,
+        ))
         count = len(self.dataset.issues)
-        self.dataset_warnings.setText(f"⚠ {count} file{'s' if count != 1 else ''} need attention" if count else "")
+        self.dataset_warnings.setText(self.t("files_need_attention", count=count) if count else "")
         self.dataset_warnings.setVisible(bool(count))
 
     def show_dataset_issues(self) -> None:
         if not self.dataset or not self.dataset.issues:
             return
         details = "\n".join(f"• {issue.message}\n  {issue.path}" for issue in self.dataset.issues[:80])
-        QMessageBox.information(self, "Folder scan details", details)
+        QMessageBox.information(
+            self, "文件夹扫描详情" if self.language == "zh_CN" else "Folder scan details", details
+        )
 
     # ---------- modes and interaction ----------
     def set_mode(self, mode: str) -> None:
         if self.is_read_only() and mode != "SELECT":
-            self.status_message.setText("READ ONLY — editing tools are disabled")
+            self.status_message.setText("只读模式 — 编辑工具已禁用" if self.language == "zh_CN" else "READ ONLY — editing tools are disabled")
             self.select_action.setChecked(True)
             return
         if self.mode == "DRAW_PATH" and self.temp and mode != "DRAW_PATH":
@@ -1114,7 +1412,7 @@ class AnnotatorWindow(QMainWindow):
         }.get(mode)
         if action:
             action.setChecked(True)
-        self.status_message.setText(f"Mode: {mode.replace('_', ' ').title()}")
+        self.status_message.setText(self.t("mode", mode=self.t(f"mode_{mode}")))
         self.render()
         self.update_inspector()
 
@@ -1140,7 +1438,7 @@ class AnnotatorWindow(QMainWindow):
                     self.merge_pending_edge = None
                     self.changed()
                 except ValueError as exc:
-                    QMessageBox.warning(self, "Merge Path", str(exc))
+                    QMessageBox.warning(self, "合并路线" if self.language == "zh_CN" else "Merge Path", str(exc))
             return
         hit = self.nearest_segment(x, y)
         if self.sel and self.sel[0] in ("edge", "point") and event.modifiers() & Qt.KeyboardModifier.AltModifier:
@@ -1275,16 +1573,18 @@ class AnnotatorWindow(QMainWindow):
                 total = polyline_length(self.m.segment(edge_id)["points"])
                 start, end = max(0.0, start - 12.0), min(total, end + 12.0)
                 self.evidence_selection = (edge_id, start, end)
-            self.status_message.setText("Span selected — press A / B / C / D / E / U")
+            self.status_message.setText(
+                "已选择区间 — 请按 A / B / C / D / E / U" if self.language == "zh_CN" else "Span selected — press A / B / C / D / E / U"
+            )
             self.update_inspector()
             self.render()
 
     def assign_selected_evidence(self, key: str) -> None:
         if self.is_read_only():
-            self.status_message.setText("READ ONLY — evidence was not changed")
+            self.status_message.setText("只读模式 — Evidence 未修改" if self.language == "zh_CN" else "READ ONLY — evidence was not changed")
             return
         if not self.m or not self.evidence_selection or key not in EVIDENCE_BY_KEY:
-            self.status_message.setText("Drag along a path to select a span first")
+            self.status_message.setText("请先沿路线拖动选择一个区间" if self.language == "zh_CN" else "Drag along a path to select a span first")
             return
         edge_id, start, end = self.evidence_selection
         try:
@@ -1295,7 +1595,7 @@ class AnnotatorWindow(QMainWindow):
         self.sel = ("span", edge_id, min(start, end), max(start, end))
         self.evidence_selection = None
         self.changed(model_already_changed=True)
-        self.status_message.setText(f"{key} — {EVIDENCE_LABELS[EVIDENCE_BY_KEY[key]]}")
+        self.status_message.setText(f"{key} — {self.evidence_label(EVIDENCE_BY_KEY[key])}")
         if self.auto_advance.isChecked():
             self.next_unreviewed_span(1)
 
@@ -1314,7 +1614,7 @@ class AnnotatorWindow(QMainWindow):
             if cursor < total - 0.5:
                 gaps.append((segment["edge_id"], cursor, total))
         if not gaps:
-            self.status_message.setText("All path lengths have evidence labels")
+            self.status_message.setText("所有路线区间都已有 Evidence 标签" if self.language == "zh_CN" else "All path lengths have evidence labels")
             return False
         current = None
         if self.sel and self.sel[0] == "span":
@@ -1336,10 +1636,12 @@ class AnnotatorWindow(QMainWindow):
             self.m.delete_segment(self.sel[1])
         elif self.sel[0] == "point":
             if not self.m.delete_point(self.sel[1], self.sel[2]):
-                self.status_message.setText("Endpoint deletion would break the path; delete the path instead")
+                self.status_message.setText(
+                    "删除端点会破坏路线，请改为删除整条路线" if self.language == "zh_CN" else "Endpoint deletion would break the path; delete the path instead"
+                )
                 return
         elif self.sel[0] == "span":
-            self.status_message.setText("Repaint this span with another evidence class")
+            self.status_message.setText("请给这个区间重新选择 Evidence 类别" if self.language == "zh_CN" else "Repaint this span with another evidence class")
             return
         self.sel = None
         self.changed(model_already_changed=True)
@@ -1370,7 +1672,7 @@ class AnnotatorWindow(QMainWindow):
     def changed(self, *, model_already_changed=False) -> None:
         del model_already_changed
         self.dirty = True
-        self.save_label.setText("Unsaved")
+        self.save_label.setText(self.t("unsaved"))
         self.schedule_persistence()
         self.render()
         self.update_ui_state()
@@ -1512,7 +1814,7 @@ class AnnotatorWindow(QMainWindow):
                 center = source.mapToScene(source.viewport().rect().center())
                 target.setTransform(source.transform())
                 target.centerOn(center)
-            self.zoom_label.setText(f"Zoom: {source.transform().m11() * 100:.0f}%")
+            self.zoom_label.setText(self.t("zoom", percent=source.transform().m11() * 100))
             self.session_timer.start()
         finally:
             self._syncing_views = False
@@ -1535,9 +1837,12 @@ class AnnotatorWindow(QMainWindow):
         self.clean_rgb = bool(checked) if isinstance(checked, bool) else not self.clean_rgb
         self.clean_action.setChecked(self.clean_rgb)
         self.clean_badge.setVisible(self.clean_rgb)
-        self.status_message.setText("Clean RGB — overlays hidden" if self.clean_rgb else f"Mode: {self.mode.title()}")
+        self.status_message.setText(
+            self.t("clean_status") if self.clean_rgb else self.t("mode", mode=self.t(f"mode_{self.mode}"))
+        )
         self.render()
         self.update_inspector()
+        self.update_image_guide()
 
     def toggle_draft_action(self) -> None:
         self.set_layer("draft", self.draft_action.isChecked())
@@ -1567,7 +1872,7 @@ class AnnotatorWindow(QMainWindow):
         self.render()
 
     def set_interpolation(self, value: str) -> None:
-        self.smooth_interpolation = value == "Smooth"
+        self.smooth_interpolation = value in ("smooth", "Smooth")
         self.render()
 
     def fit_image(self) -> None:
@@ -1612,7 +1917,7 @@ class AnnotatorWindow(QMainWindow):
 
     def cursor_moved(self, q: QPointF) -> None:
         self.last_cursor_point = QPointF(q)
-        self.cursor_label.setText(f"Cursor: x={q.x():.1f}, y={q.y():.1f}")
+        self.cursor_label.setText(self.t("cursor", x=q.x(), y=q.y()))
         if self.review_view_enabled:
             self.draw_review_cursor(self.review_clean)
             self.draw_review_cursor(self.review_overlay)
@@ -1622,20 +1927,22 @@ class AnnotatorWindow(QMainWindow):
         if not self.m or self.out is None:
             return False
         if self.dataset and self.dataset.read_only:
-            self.save_label.setText("READ ONLY")
-            self.status_message.setText("This dataset is sealed; annotations were not written")
+            self.save_label.setText(self.t("read_only"))
+            self.status_message.setText(
+                "此数据集已封存，未写入任何标注" if self.language == "zh_CN" else "This dataset is sealed; annotations were not written"
+            )
             return False
         if not force and not self.dirty:
             return True
         try:
             atomic_write_json(self.m.data, self.out, backup=self.out.exists())
         except AnnotationWriteError as exc:
-            self.save_label.setText("Save Failed")
-            self.status_message.setText(f"Save failed: {exc}")
+            self.save_label.setText("保存失败" if self.language == "zh_CN" else "Save Failed")
+            self.status_message.setText(f"保存失败：{exc}" if self.language == "zh_CN" else f"Save failed: {exc}")
             return False
         self.dirty = False
-        self.save_label.setText("Saved")
-        self.status_message.setText(f"Saved {self.out.name}")
+        self.save_label.setText(self.t("saved"))
+        self.status_message.setText(f"已保存 {self.out.name}" if self.language == "zh_CN" else f"Saved {self.out.name}")
         self.state_store.clear_recovery()
         if self.current_record:
             self.current_record.annotation_path = self.out
@@ -1652,6 +1959,7 @@ class AnnotatorWindow(QMainWindow):
             self.populate_sidebar()
             self.update_dataset_summary()
         self.save_session_state()
+        self.update_image_guide()
         return True
 
     def autosave(self) -> None:
@@ -1692,7 +2000,11 @@ class AnnotatorWindow(QMainWindow):
         self.render()
         self.fit_image()
         self.update_ui_state()
-        self.status_message.setText(f"Opened region {target + 1}/{len(self.queue)}: {self.region['region_id']}")
+        self.status_message.setText(
+            f"已打开区域 {target + 1}/{len(self.queue)}：{self.region['region_id']}"
+            if self.language == "zh_CN"
+            else f"Opened region {target + 1}/{len(self.queue)}: {self.region['region_id']}"
+        )
 
     def update_navigation(self) -> None:
         if self.dataset and self.current_record:
@@ -1700,7 +2012,9 @@ class AnnotatorWindow(QMainWindow):
             index = self.dataset.records.index(self.current_record)
             self.previous_action.setEnabled(index > 0)
             self.next_action.setEnabled(index < total - 1)
-            self.nav_label.setText(f"  Image {index + 1}/{total}: {self.current_record.image_id}")
+            self.nav_label.setText(self.t(
+                "image_navigation", index=index + 1, total=total, image_id=self.current_record.image_id
+            ))
         elif self.queue:
             total = len(self.queue)
             image_total = 0
@@ -1711,9 +2025,13 @@ class AnnotatorWindow(QMainWindow):
                     pass
             self.previous_action.setEnabled(self.queue_index > 0)
             self.next_action.setEnabled(self.queue_index < total - 1)
-            self.nav_label.setText(
-                f"  区域 {self.queue_index + 1}/{total}（共 {image_total} 张图）: {self.region.get('region_id', '')}"
-            )
+            self.nav_label.setText(self.t(
+                "region_navigation",
+                index=self.queue_index + 1,
+                total=total,
+                images=image_total,
+                region_id=self.region.get("region_id", ""),
+            ))
 
     def save_session_state(self) -> None:
         if not self.dataset or not self.current_record:
@@ -1760,8 +2078,10 @@ class AnnotatorWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self,
-            "Restore previous session?",
-            "Unsaved annotation work was found for this image. Restore it?",
+            "恢复上次工作？" if self.language == "zh_CN" else "Restore previous session?",
+            "发现这张图有未保存的标注，是否恢复？"
+            if self.language == "zh_CN"
+            else "Unsaved annotation work was found for this image. Restore it?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes and isinstance(recovery.get("document"), dict):
@@ -1776,14 +2096,15 @@ class AnnotatorWindow(QMainWindow):
     def update_ui_state(self) -> None:
         self.update_navigation()
         self.update_inspector()
+        self.update_image_guide()
         if self.m:
             image = self.m.data.get("image", {})
-            self.native_label.setText(f"Native image: {image.get('width', 0)}×{image.get('height', 0)}")
-        self.zoom_label.setText(f"Zoom: {self.active_view().transform().m11() * 100:.0f}%")
+            self.native_label.setText(self.t("native_image", width=image.get("width", 0), height=image.get("height", 0)))
+        self.zoom_label.setText(self.t("zoom", percent=self.active_view().transform().m11() * 100))
         self.undo_action.setEnabled(bool(self.m and self.m.undo_stack))
         self.redo_action.setEnabled(bool(self.m and self.m.redo_stack))
         if self.dataset and self.dataset.read_only:
-            self.save_label.setText("READ ONLY")
+            self.save_label.setText(self.t("read_only"))
             self.save_action.setEnabled(False)
             self.draw_action.setEnabled(False)
             self.edit_action.setEnabled(False)
@@ -1794,6 +2115,36 @@ class AnnotatorWindow(QMainWindow):
             self.edit_action.setEnabled(True)
             self.evidence_action.setEnabled(True)
 
+    def update_image_guide(self) -> None:
+        image_id = "—"
+        if self.current_record:
+            image_id = self.current_record.image_id
+        elif self.region:
+            image_id = self.region.get("region_id", "—")
+        self.guide_image.setText(("当前图片：" if self.language == "zh_CN" else "Current image: ") + image_id)
+        if not self.m:
+            self.guide_title.setText(self.t("guide_title_empty"))
+            self.guide_body.setText(self.t("guide_body_empty"))
+            return
+        stats = self.m.stats()
+        reviewed = self.m.data.get("annotation_status") == "reviewed"
+        if reviewed and self.dirty:
+            title_key, body_key = "guide_title_confirm", "guide_body_confirm"
+        elif reviewed:
+            title_key, body_key = "guide_title_done", "guide_body_done"
+        elif stats["path_count"] == 0:
+            title_key, body_key = "guide_title_empty", "guide_body_empty"
+        elif stats["unreviewed_px"] > 0.5:
+            title_key, body_key = "guide_title_evidence", "guide_body_evidence"
+        else:
+            title_key, body_key = "guide_title_confirm", "guide_body_confirm"
+        self.guide_title.setText(self.t(title_key))
+        self.guide_body.setText(self.t(body_key))
+        writable = not self.is_read_only()
+        self.guide_draw_button.setEnabled(writable)
+        self.guide_evidence_button.setEnabled(writable and stats["path_count"] > 0)
+        self.guide_save_next_button.setEnabled(writable and self.next_action.isEnabled())
+
     def update_inspector(self) -> None:
         while self.form.count():
             item = self.form.takeAt(0)
@@ -1803,47 +2154,50 @@ class AnnotatorWindow(QMainWindow):
                 widget.setParent(None)
                 widget.deleteLater()
         if not self.m:
-            self.form.addRow(QLabel("No selected path"))
+            self.form.addRow(QLabel(self.t("no_selected_path")))
             return
         stats = self.m.stats()
-        self.review_progress.setText(f"Evidence reviewed: {stats['percent']:.0f}%")
+        self.review_progress.setText(self.t("review_progress", percent=stats["percent"]))
         context = stats["by_class_px"].get("context_only", 0.0)
         weak = stats["by_class_px"].get("weak_visual", 0.0)
-        self.review_details.setText(
-            f"Unreviewed path length: {stats['unreviewed_px']:.0f} px\n"
-            f"Context-only: {context:.0f} px\nWeak visual: {weak:.0f} px"
-        )
+        self.review_details.setText(self.t(
+            "review_details", unreviewed=stats["unreviewed_px"], context=context, weak=weak
+        ))
         if self.clean_rgb:
-            self.form.addRow(QLabel("CLEAN RGB\nAnnotation details are hidden."))
+            self.form.addRow(QLabel(
+                "纯净 RGB\n标注详情已隐藏。" if self.language == "zh_CN" else "CLEAN RGB\nAnnotation details are hidden."
+            ))
             return
         if not self.sel:
-            self.form.addRow(QLabel("No selected path"))
-            self.form.addRow("Paths", QLabel(str(stats["path_count"])))
+            self.form.addRow(QLabel(self.t("no_selected_path")))
+            self.form.addRow("路线数量" if self.language == "zh_CN" else "Paths", QLabel(str(stats["path_count"])))
             return
         if self.sel[0] in ("edge", "point", "span"):
             segment = self.m.segment(self.sel[1])
-            self.form.addRow("Edge", QLabel(segment["edge_id"]))
+            self.form.addRow("路线 ID" if self.language == "zh_CN" else "Edge", QLabel(segment["edge_id"]))
             combo = QComboBox()
             combo.setMinimumWidth(145)
-            combo.addItems(PATH_TYPES)
-            combo.setCurrentText(segment.get("path_type", "pedestrian_path"))
+            for path_type in PATH_TYPES:
+                combo.addItem(self.path_type_label(path_type), path_type)
+            combo.setCurrentIndex(max(0, combo.findData(segment.get("path_type", "pedestrian_path"))))
             combo.setEnabled(not self.is_read_only())
-            combo.currentTextChanged.connect(lambda value: self.change_segment_attr("path_type", value))
-            self.form.addRow("Path type", combo)
+            combo.currentIndexChanged.connect(lambda _index, widget=combo: self.change_segment_attr("path_type", widget.currentData()))
+            self.form.addRow("路线类型" if self.language == "zh_CN" else "Path type", combo)
             coverage = evidence_coverage(segment)
-            self.form.addRow("Review status", QLabel(segment.get("review_status", "unreviewed")))
-            self.form.addRow("Evidence coverage", QLabel(f"{coverage['percent']:.0f}%"))
-            for evidence, label in EVIDENCE_LABELS.items():
+            review_status = self.t("status_reviewed") if segment.get("review_status") == "reviewed" else self.t("status_unreviewed")
+            self.form.addRow("审核状态" if self.language == "zh_CN" else "Review status", QLabel(review_status))
+            self.form.addRow("证据完成度" if self.language == "zh_CN" else "Evidence coverage", QLabel(f"{coverage['percent']:.0f}%"))
+            for evidence in EVIDENCE_LABELS:
                 length = coverage["by_class_px"].get(evidence, 0.0)
                 if length > 0:
                     percent = 100.0 * length / coverage["total_px"] if coverage["total_px"] else 0.0
-                    self.form.addRow(label, QLabel(f"{percent:.0f}%"))
+                    self.form.addRow(self.evidence_label(evidence), QLabel(f"{percent:.0f}%"))
             if self.sel[0] == "point":
                 point = segment["points"][self.sel[2]]
-                self.form.addRow("Control point", QLabel(str(self.sel[2])))
-                self.form.addRow("Native X/Y", QLabel(f"{point[0]:.1f}, {point[1]:.1f}"))
+                self.form.addRow("控制点" if self.language == "zh_CN" else "Control point", QLabel(str(self.sel[2])))
+                self.form.addRow("原图 X/Y" if self.language == "zh_CN" else "Native X/Y", QLabel(f"{point[0]:.1f}, {point[1]:.1f}"))
             if self.sel[0] == "span":
-                self.form.addRow("Selected span", QLabel(f"{self.sel[2]:.1f}–{self.sel[3]:.1f} px"))
+                self.form.addRow("所选区间" if self.language == "zh_CN" else "Selected span", QLabel(f"{self.sel[2]:.1f}–{self.sel[3]:.1f} px"))
                 midpoint = (self.sel[2] + self.sel[3]) / 2.0
                 span = next(
                     (
@@ -1854,30 +2208,34 @@ class AnnotatorWindow(QMainWindow):
                     None,
                 )
                 if span:
-                    self.form.addRow("Evidence", QLabel(EVIDENCE_LABELS.get(span.get("evidence"), span.get("evidence", ""))))
+                    self.form.addRow("Evidence", QLabel(self.evidence_label(span.get("evidence", ""))))
                     confidence = QComboBox()
-                    confidence.addItems(["high", "medium", "low"])
-                    confidence.setCurrentText(span.get("review_confidence", "medium"))
-                    confidence.currentTextChanged.connect(
-                        lambda value, edge=segment["edge_id"], start=self.sel[2], end=self.sel[3]: self.change_span_attr(
-                            edge, start, end, "review_confidence", value
+                    for value, zh, en in (("high", "高", "High"), ("medium", "中", "Medium"), ("low", "低", "Low")):
+                        confidence.addItem(zh if self.language == "zh_CN" else en, value)
+                    confidence.setCurrentIndex(max(0, confidence.findData(span.get("review_confidence", "medium"))))
+                    confidence.currentIndexChanged.connect(
+                        lambda _index, widget=confidence, edge=segment["edge_id"], start=self.sel[2], end=self.sel[3]: self.change_span_attr(
+                            edge, start, end, "review_confidence", widget.currentData()
                         )
                     )
                     note = QLineEdit(span.get("note", ""))
-                    note.setPlaceholderText("Optional review note")
+                    note.setPlaceholderText("可选审核备注" if self.language == "zh_CN" else "Optional review note")
                     note.editingFinished.connect(
                         lambda widget=note, edge=segment["edge_id"], start=self.sel[2], end=self.sel[3]: self.change_span_attr(
                             edge, start, end, "note", widget.text()
                         )
                     )
-                    self.form.addRow("Confidence", confidence)
-                    self.form.addRow("Note", note)
-            details = QGroupBox("Details")
+                    self.form.addRow("置信度" if self.language == "zh_CN" else "Confidence", confidence)
+                    self.form.addRow("备注" if self.language == "zh_CN" else "Note", note)
+            details = QGroupBox("详情" if self.language == "zh_CN" else "Details")
             details.setCheckable(True)
             details.setChecked(False)
             details_layout = QFormLayout(details)
-            details_layout.addRow("Source", QLabel(segment.get("source", "manual")))
-            details_layout.addRow("Geometry review", QLabel("Required" if segment.get("geometry_review_required") else "No"))
+            details_layout.addRow("来源" if self.language == "zh_CN" else "Source", QLabel(segment.get("source", "manual")))
+            geometry_status = (
+                "需要修正" if segment.get("geometry_review_required") else "不需要"
+            ) if self.language == "zh_CN" else ("Required" if segment.get("geometry_review_required") else "No")
+            details_layout.addRow("几何复核" if self.language == "zh_CN" else "Geometry review", QLabel(geometry_status))
             self.form.addRow(details)
 
     def change_segment_attr(self, key: str, value) -> None:
@@ -1898,7 +2256,11 @@ class AnnotatorWindow(QMainWindow):
         if not self.m or self.is_read_only():
             return
         if self.m.data.get("segments") and self.m.stats()["unreviewed_px"] > 0.5:
-            self.status_message.setText("Evidence is incomplete; use X then N to review remaining spans")
+            self.status_message.setText(
+                "Evidence 尚未完整；按 X 进入审核，再按 N 找到下一个未审核区间"
+                if self.language == "zh_CN"
+                else "Evidence is incomplete; use X then N to review remaining spans"
+            )
             return
         before = self.m.snapshot()
         self.m.data["annotation_status"] = "reviewed"
@@ -1913,25 +2275,26 @@ class AnnotatorWindow(QMainWindow):
         self.sel = ("edge", edge_id)
         menu = QMenu(self)
         if self.is_read_only():
-            menu.addAction("READ ONLY").setEnabled(False)
+            menu.addAction(self.t("read_only")).setEnabled(False)
             menu.exec(global_pos)
             return
-        menu.addAction("Edit Geometry", lambda: self.set_mode("EDIT"))
-        menu.addAction("Insert Point Here", lambda: self.insert_context_point(edge_id, hit[1] + 1, hit[2]))
-        menu.addAction("Split Path Here", lambda: self.split_context_path(edge_id, hit[4]))
-        menu.addAction("Merge Path…", lambda: self.begin_merge(edge_id))
-        path_menu = menu.addMenu("Set Path Type")
+        zh = self.language == "zh_CN"
+        menu.addAction("编辑几何" if zh else "Edit Geometry", lambda: self.set_mode("EDIT"))
+        menu.addAction("在这里插入控制点" if zh else "Insert Point Here", lambda: self.insert_context_point(edge_id, hit[1] + 1, hit[2]))
+        menu.addAction("在这里拆分路线" if zh else "Split Path Here", lambda: self.split_context_path(edge_id, hit[4]))
+        menu.addAction("合并路线…" if zh else "Merge Path…", lambda: self.begin_merge(edge_id))
+        path_menu = menu.addMenu("设置路线类型" if zh else "Set Path Type")
         for path_type in PATH_TYPES:
-            path_menu.addAction(path_type, lambda _checked=False, value=path_type: self.set_path_type(edge_id, value))
-        menu.addAction("Review Evidence", lambda: self.set_mode("EVIDENCE"))
+            path_menu.addAction(self.path_type_label(path_type), lambda _checked=False, value=path_type: self.set_path_type(edge_id, value))
+        menu.addAction("审核 Evidence" if zh else "Review Evidence", lambda: self.set_mode("EVIDENCE"))
         if self.m.segment(edge_id).get("excluded_from_task"):
-            menu.addAction("Restore to Task", lambda: self.restore_edge(edge_id))
+            menu.addAction("恢复到任务" if zh else "Restore to Task", lambda: self.restore_edge(edge_id))
         else:
-            menu.addAction("Mark Excluded", lambda: self.exclude_edge(edge_id))
+            menu.addAction("标为任务外" if zh else "Mark Excluded", lambda: self.exclude_edge(edge_id))
         if self.m.segment(edge_id).get("geometry_review_required"):
-            menu.addAction("Geometry Fixed", lambda: self.geometry_fixed(edge_id))
+            menu.addAction("几何已修正" if zh else "Geometry Fixed", lambda: self.geometry_fixed(edge_id))
         menu.addSeparator()
-        menu.addAction("Delete Path", self.delete)
+        menu.addAction("删除路线" if zh else "Delete Path", self.delete)
         menu.exec(global_pos)
 
     def insert_context_point(self, edge_id, index, point) -> None:
@@ -1945,11 +2308,13 @@ class AnnotatorWindow(QMainWindow):
             self.sel = ("edge", left)
             self.changed(model_already_changed=True)
         except ValueError as exc:
-            QMessageBox.warning(self, "Split Path", str(exc))
+            QMessageBox.warning(self, "拆分路线" if self.language == "zh_CN" else "Split Path", str(exc))
 
     def begin_merge(self, edge_id) -> None:
         self.merge_pending_edge = edge_id
-        self.status_message.setText("Click a second path with a nearby endpoint to merge")
+        self.status_message.setText(
+            "请点击端点靠近的第二条路线完成合并" if self.language == "zh_CN" else "Click a second path with a nearby endpoint to merge"
+        )
 
     def set_path_type(self, edge_id, path_type) -> None:
         self.m.set_attr(edge_id, "path_type", path_type)
@@ -1964,12 +2329,20 @@ class AnnotatorWindow(QMainWindow):
     def restore_edge(self, edge_id) -> None:
         self.m.set_attr(edge_id, "excluded_from_task", False)
         self.changed(model_already_changed=True)
-        self.status_message.setText("Edge restored; repaint any E span with A/B/C/D/U")
+        self.status_message.setText(
+            "路线已恢复；请用 A/B/C/D/U 重标原来的 E 区间"
+            if self.language == "zh_CN"
+            else "Edge restored; repaint any E span with A/B/C/D/U"
+        )
 
     def geometry_fixed(self, edge_id) -> None:
         self.m.mark_geometry_fixed(edge_id)
         self.changed(model_already_changed=True)
-        self.status_message.setText("Geometry marked fixed; reassign this span as A/B/C/U")
+        self.status_message.setText(
+            "几何已标记为修正；请把该区间重新标为 A/B/C/U"
+            if self.language == "zh_CN"
+            else "Geometry marked fixed; reassign this span as A/B/C/U"
+        )
 
     def is_read_only(self) -> bool:
         return bool(self.dataset and self.dataset.read_only)
@@ -2010,27 +2383,46 @@ class AnnotatorWindow(QMainWindow):
             for segment in self.m.data.get("segments", []):
                 kind = segment.get("path_type", "unknown")
                 paths[kind] = paths.get(kind, 0) + 1
-        text = (
-            f"Images: {len(self.dataset.records)}\n"
-            f"Annotations: {self.dataset.annotated_count}\n"
-            f"Reviewed: {self.dataset.reviewed_count}\n"
-            f"Unreviewed: {len(self.dataset.records) - self.dataset.reviewed_count}\n"
-            f"Evidence coverage: {sum(evidence) / len(evidence) if evidence else 0:.0f}%\n"
-            f"Missing annotations: {len(self.dataset.records) - self.dataset.annotated_count}\n"
-            f"Orphan JSON: {sum(issue.code == 'orphan_annotation' for issue in self.dataset.issues)}\n"
-            f"Issues: {len(self.dataset.issues)}\n\n"
-            + "Path types in current image:\n"
-            + "\n".join(f"{key}: {value}" for key, value in sorted(paths.items()))
-        )
-        QMessageBox.information(self, "Dataset Info", text)
+        coverage = sum(evidence) / len(evidence) if evidence else 0
+        if self.language == "zh_CN":
+            info_text = (
+                f"图片：{len(self.dataset.records)}\n"
+                f"已有标注：{self.dataset.annotated_count}\n"
+                f"已审核：{self.dataset.reviewed_count}\n"
+                f"未审核：{len(self.dataset.records) - self.dataset.reviewed_count}\n"
+                f"Evidence 完成度：{coverage:.0f}%\n"
+                f"缺少标注：{len(self.dataset.records) - self.dataset.annotated_count}\n"
+                f"孤立 JSON：{sum(issue.code == 'orphan_annotation' for issue in self.dataset.issues)}\n"
+                f"问题：{len(self.dataset.issues)}\n\n当前图片的路线类型：\n"
+                + "\n".join(f"{self.path_type_label(key)}: {value}" for key, value in sorted(paths.items()))
+            )
+        else:
+            info_text = (
+                f"Images: {len(self.dataset.records)}\n"
+                f"Annotations: {self.dataset.annotated_count}\n"
+                f"Reviewed: {self.dataset.reviewed_count}\n"
+                f"Unreviewed: {len(self.dataset.records) - self.dataset.reviewed_count}\n"
+                f"Evidence coverage: {coverage:.0f}%\n"
+                f"Missing annotations: {len(self.dataset.records) - self.dataset.annotated_count}\n"
+                f"Orphan JSON: {sum(issue.code == 'orphan_annotation' for issue in self.dataset.issues)}\n"
+                f"Issues: {len(self.dataset.issues)}\n\nPath types in current image:\n"
+                + "\n".join(f"{self.path_type_label(key)}: {value}" for key, value in sorted(paths.items()))
+            )
+        QMessageBox.information(self, self.t("dataset_info"), info_text)
 
     def export_dataset(self, trusted_only: bool) -> None:
         if not self.dataset:
             return
         if self.dataset.read_only:
-            QMessageBox.warning(self, "Read Only", "Batch export is disabled for this sealed dataset.")
+            QMessageBox.warning(
+                self,
+                self.t("read_only"),
+                "此数据集已封存，不能批量导出。" if self.language == "zh_CN" else "Batch export is disabled for this sealed dataset.",
+            )
             return
-        destination = QFileDialog.getExistingDirectory(self, "Choose derived export folder")
+        destination = QFileDialog.getExistingDirectory(
+            self, "选择派生数据输出文件夹" if self.language == "zh_CN" else "Choose derived export folder"
+        )
         if not destination:
             return
         output = Path(destination)
@@ -2055,31 +2447,15 @@ class AnnotatorWindow(QMainWindow):
                 count += 1
             except (OSError, ValueError, AnnotationWriteError):
                 continue
-        self.status_message.setText(f"Exported {count} derived annotation files")
+        self.status_message.setText(
+            f"已导出 {count} 个派生标注文件" if self.language == "zh_CN" else f"Exported {count} derived annotation files"
+        )
 
     def help(self) -> None:
         QMessageBox.information(
             self,
-            "Keyboard Shortcuts",
-            "Space + drag   Pan\n"
-            "Wheel / pinch  Zoom\n"
-            "F              Fit image\n"
-            "1 / 2 / 4 / 8  Native zoom\n"
-            "`              Clean RGB\n"
-            "R              Review view\n"
-            "V              Select / edit\n"
-            "P              Draw path\n"
-            "X              Evidence mode\n"
-            "A/B/C/D/E/U    Evidence class\n"
-            "N / Shift+N    Next / previous unreviewed span\n"
-            "← / →          Last / next image\n"
-            "Cmd/Ctrl+Z     Undo\n"
-            "Cmd/Ctrl+Shift+Z  Redo\n"
-            "Delete         Delete selection\n"
-            "Cmd/Ctrl+S     Save\n"
-            "Cmd/Ctrl+Enter Save & next\n\n"
-            "B: 图里还能指出具体视觉证据。\n"
-            "C: 主要靠布局 / 常识推断。",
+            self.t("shortcuts"),
+            self.t("shortcuts_body"),
         )
 
     def maybe_show_onboarding(self) -> None:
@@ -2087,10 +2463,8 @@ class AnnotatorWindow(QMainWindow):
             return
         QMessageBox.information(
             self,
-            "Three steps",
-            "1. Press P to draw or V to edit paths.\n"
-            "2. Press X for Evidence Review.\n"
-            "3. Drag a span, then press A/B/C/D/E/U.",
+            self.t("onboarding_title"),
+            self.t("onboarding_body"),
         )
         self.state_store.set_onboarding_seen()
 
@@ -2148,10 +2522,14 @@ class AnnotatorWindow(QMainWindow):
             return
         if images:
             suggested = images[0].parent / "annotations_v2"
-            output = QFileDialog.getExistingDirectory(self, "Choose annotation output folder", str(suggested))
+            output = QFileDialog.getExistingDirectory(
+                self,
+                "选择标注输出文件夹" if self.language == "zh_CN" else "Choose annotation output folder",
+                str(suggested),
+            )
             if output:
                 self.dataset = dataset_from_files(images, output)
-                self.dataset_name.setText("Temporary image set")
+                self.dataset_name.setText("临时图片集" if self.language == "zh_CN" else "Temporary image set")
                 self.populate_sidebar()
                 self.update_dataset_summary()
                 if self.dataset.records:

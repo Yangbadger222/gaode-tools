@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .annotation_io import atomic_write_json
+from .localization import DEFAULT_LANGUAGE, normalize_language
 
 
 def default_state_path() -> Path:
@@ -21,7 +22,14 @@ def default_state_path() -> Path:
 class AppStateStore:
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else default_state_path()
-        self.data = {"version": 1, "recent_folders": [], "sessions": {}, "recovery": None, "onboarding_seen": False}
+        self.data = {
+            "version": 1,
+            "recent_folders": [],
+            "sessions": {},
+            "recovery": None,
+            "onboarding_seen": False,
+            "language": DEFAULT_LANGUAGE,
+        }
         if self.path.exists():
             try:
                 import json
@@ -77,4 +85,11 @@ class AppStateStore:
 
     def set_onboarding_seen(self) -> None:
         self.data["onboarding_seen"] = True
+        self.save()
+
+    def language(self) -> str:
+        return normalize_language(self.data.get("language"))
+
+    def set_language(self, language: str) -> None:
+        self.data["language"] = normalize_language(language)
         self.save()
