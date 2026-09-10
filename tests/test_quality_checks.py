@@ -15,3 +15,8 @@ def test_shared_crossing_and_boundary():
 def test_invalid_and_duplicate_ids():
  d=base([edge('e1','missing','a',[[0,0],[1,0]]),edge('e1','a','a',[[1,0],[2,0]])],[node('a',1,0),node('a',1,0)])
  w=check(d);assert any('Duplicate node ID' in x for x in w);assert any('Duplicate edge ID' in x for x in w);assert any('Missing start' in x for x in w);assert any('Self-loop' in x for x in w)
+
+def test_reports_path_through_a_missing_captured_tile():
+ d=base([edge('e','a','b',[[50,50],[250,50]])],[node('a',50,50),node('b',250,50)])
+ region={'tile_width':100,'tile_height':100,'tiles':[{'global_x':0,'global_y':0},{'global_x':200,'global_y':0}]}
+ assert 'Edge leaves captured imagery: e' in check(d,region)
