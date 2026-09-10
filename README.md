@@ -395,7 +395,11 @@ python scripts/launch_annotation_queue.py \
 
 把鼠标停在顶部主要按钮或逐图指导按钮上满 3 秒，会出现一段不依赖专业术语的用途说明；鼠标移开、点击按钮或窗口隐藏时提示会立即关闭。
 
-Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misaligned`、`E Task Mismatch`、`U Unsure`。最关键的判断是：B 还能指出具体像素证据；C 主要依靠布局或常识推断。旧路线绝不会自动标成 A。
+Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misaligned`、`E Task Mismatch`、`U Unsure`。最关键的判断是：B 仍必须能指出具体 RGB 像素证据；C 主要依靠布局或常识推断。低分辨率不自动等于 B。旧路线绝不会自动标成 A。
+
+局部 E 只排除选中的路线区间，不会排除整条 polyline。只有明确使用右键或属性中的 **排除整条路径 / Exclude Entire Path** 才会进入 `excluded_edges`；整条路径会显示为灰色，并可恢复、撤销和重做。历史上同时存在局部 E 与整路标志的旧数据会被报告为歧义，不会静默猜测。
+
+B 可选记录 `visibility_issue`：`tree_canopy`、`shadow`、`low_contrast`、`low_resolution`、`narrow_structure`、`building_occlusion`、`mixed`、`other`。不选也可以保存；改成其他 Evidence 类别时会自动清除。低分辨率本身不是 B 的理由，仍要能指出具体 RGB 证据。
 
 程序每次操作后约 0.9 秒自动保存；状态栏显示 Saved 或 Save Failed。Folder 设置可开启 **Read Only / Sealed**，此时只能查看，不能修改、保存或批量覆盖。schema 细节见 [docs/ANNOTATION_SCHEMA_V2.md](docs/ANNOTATION_SCHEMA_V2.md)。
 
@@ -416,20 +420,22 @@ Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misa
 
 一句话：标的是**固定路径网络**，不是“所有可能走得过去的地方”。
 
-## 13. 路径画在机器人实际可走的位置
+## 13. Canonical Navigable Corridor Centerline
 
-不要画道路边界，也不要为了“居中”把路线压在双向道路的中间分隔线。路线应落在机器人实际可以持续通行的位置：
+标注的是**稳定可导航通道的标准中心线，而不是某次机器人实际轨迹**。它不是 OSM 原始几何，也不是道路边界：
 
 ```text
-人行道或单通道：沿可通行带的中心画一条路径
+单一人行道 / 园路 / 窄巷：沿 corridor 的视觉中心画一条路径
 
-双向车行道：分别沿两个方向各自的可行驶带画路径
+无实体分隔的普通窄道路：作为一个连续 corridor，只画一条中心线
+
+有中央绿化带 / 护栏 / 隔离岛：两侧是两个 corridor，各画一条
              不沿中央绿化带、隔离栏、黄线或车道分界线画
 ```
 
-有实体中央隔离、绿化带、护栏或明显禁止横穿时，两侧必须是两条独立路线，只在真实可通行的路口或斑马线连接。没有物理隔离的窄双向道路，可以用一条沿可通行带中心的路径。弯路不能只点起点和终点拉直线，应沿实际可行驶位置加入足够的控制点；控制点够表达形状即可，不要每几像素点一个点。
+宽广且没有固定通行主轴的广场、开放铺装区或大型停车区域，不要凭感觉画“机器人可能走”的线，只标明确 walkway/corridor。有实体中央隔离时，两侧只在真实路口、开口或斑马线连接。弯路应跟随 corridor 曲率，不能只点起终点拉直线。
 
-清晰可见、长期存在的人行道、公园园路、建筑间铺装小路和服务通道都要补进来，不能因为 OSM 草稿没有就漏掉。反过来，树冠或阴影下无法确认的路，不要凭想象续画，应该用 `Ignore` 标出来。
+清晰可见、长期存在的人行道、公园园路、建筑间铺装小路和服务通道都要补进来，不能因为 OSM 草稿没有就漏掉。反过来，树冠或阴影下无法确认 geometry 的路，不要凭想象续画，应该用 C/U/Ignore 逻辑标出。
 
 ## 14. Path Type
 
@@ -575,7 +581,15 @@ outputs/suzhou_rgb_satellite_dataset_300/annotation_workspace/model_validation/4
 默认 `rgb/` 会以硬链接方式建立，不重复占用磁盘空间；若需要把整个验证包复制到另一台机器，重新运行时加 `--rgb-mode copy`。
 重复导出同一目录时加 `--overwrite`；它只替换该验证包目录，不会修改原始图或标注 JSON。
 
-`annotation_status=draft` 代表该标签仍是 OSM 初始草稿，只能用于模型接口、推理流程和可视化验证，不能当作最终人工真值或模型精度结论。完成 RGB 人工复核后再导出，状态会自动变为 `human_reviewed`。
+`annotation_status=draft` 代表该标签仍是 OSM 初始草稿，只能用于模型接口、推理流程和可视化验证，不能当作最终人工真值或模型精度结论。完成 RGB 人工复核后再导出，状态会自动变为 `human_reviewed`。`review_scope=full_image` 需要人工点击 **Mark Full Image Reviewed**；它不表示所有未标像素自动是可靠 background。
+
+若需要检查旧版整路排除歧义：
+
+```bash
+python scripts/audit_v2_exclusions.py path/to/annotations_v2
+```
+
+该审计只读报告，不修改源 JSON。
 
 ## 26. 单点和 Zoom 对比
 

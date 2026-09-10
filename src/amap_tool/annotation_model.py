@@ -7,6 +7,7 @@ import math
 import re
 
 from .annotation_schema import (
+    VISIBILITY_ISSUES,
     assign_evidence_span,
     evidence_coverage,
     new_segment,
@@ -72,7 +73,29 @@ class AnnotationModel:
 
     def set_attr(self, edge_id: str, key: str, value) -> None:
         before = self.snapshot()
-        self.segment(edge_id)[key] = value
+        segment = self.segment(edge_id)
+        segment[key] = value
+        if key == "excluded_from_task":
+            segment["whole_path_exclusion_confirmed"] = bool(value)
+            segment.pop("legacy_exclusion_ambiguous", None)
+            segment.pop("legacy_exclusion_coverage", None)
+        self._commit(before)
+
+    def set_segment_excluded(self, edge_id: str, excluded: bool) -> None:
+        """Set whole-path exclusion only after an explicit user action."""
+        before = self.snapshot()
+        segment = self.segment(edge_id)
+        segment["excluded_from_task"] = bool(excluded)
+        segment["whole_path_exclusion_confirmed"] = bool(excluded)
+        segment.pop("legacy_exclusion_ambiguous", None)
+        segment.pop("legacy_exclusion_coverage", None)
+        self._commit(before)
+
+    def set_review_scope(self, scope: str) -> None:
+        if scope not in {"partial", "full_image"}:
+            raise ValueError(f"unsupported review scope: {scope}")
+        before = self.snapshot()
+        self.data["review_scope"] = scope
         self._commit(before)
 
     def insert_point(self, edge_id: str, index: int, point) -> None:
@@ -137,6 +160,7 @@ class AnnotationModel:
         *,
         review_confidence: str = "medium",
         note: str = "",
+        visibility_issue: str = "none",
     ) -> None:
         before = self.snapshot()
         assign_evidence_span(
@@ -146,11 +170,12 @@ class AnnotationModel:
             evidence,
             review_confidence=review_confidence,
             note=note,
+            visibility_issue=visibility_issue,
         )
         self._commit(before)
 
     def set_evidence_span_attr(self, edge_id: str, start_s: float, end_s: float, key: str, value) -> None:
-        if key not in {"review_confidence", "note"}:
+        if key not in {"review_confidence", "note", "visibility_issue"}:
             raise ValueError(f"unsupported evidence span field: {key}")
         segment = self.segment(edge_id)
         midpoint = (float(start_s) + float(end_s)) / 2.0
@@ -164,8 +189,16 @@ class AnnotationModel:
         )
         if target is None:
             raise ValueError("selected evidence span no longer exists")
+        if key == "visibility_issue":
+            if value not in VISIBILITY_ISSUES:
+                raise ValueError(f"unknown visibility issue: {value}")
+            if target.get("evidence") != "weak_visual" and value != "none":
+                raise ValueError("visibility_issue is only valid for weak_visual evidence")
         before = self.snapshot()
-        target[key] = value
+        if key == "visibility_issue" and value == "none":
+            target.pop(key, None)
+        else:
+            target[key] = value
         self._commit(before)
 
     def mark_geometry_fixed(self, edge_id: str) -> None:
@@ -250,6 +283,9 @@ class AnnotationModel:
             second, second_length, reverse_second, first_length + bridge
         )
         merged["excluded_from_task"] = bool(first.get("excluded_from_task") or second.get("excluded_from_task"))
+        merged["whole_path_exclusion_confirmed"] = bool(
+            first.get("whole_path_exclusion_confirmed") or second.get("whole_path_exclusion_confirmed")
+        )
         merged["geometry_review_required"] = bool(first.get("geometry_review_required") or second.get("geometry_review_required"))
         merged.pop("start_node", None)
         merged.pop("end_node", None)

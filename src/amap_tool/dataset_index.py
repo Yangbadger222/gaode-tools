@@ -36,6 +36,7 @@ class ImageRecord:
     output_annotation_path: Path | None = None
     annotation_schema_version: str = ""
     review_status: str = "unreviewed"
+    review_scope: str = "partial"
     path_count: int = 0
     evidence_percent: float = 0.0
     evidence_flags: set[str] = field(default_factory=set)
@@ -67,6 +68,10 @@ class DatasetIndex:
     @property
     def annotated_count(self) -> int:
         return sum(record.annotated for record in self.records)
+
+    @property
+    def full_image_reviewed_count(self) -> int:
+        return sum(record.review_scope == "full_image" for record in self.records)
 
 
 def _files(root: Path, extensions: set[str], recursive: bool) -> list[Path]:
@@ -315,6 +320,7 @@ def scan_dataset(
             version = _schema_version(data)
             record.annotation_schema_version = version
             record.review_status = str(data.get("annotation_status") or data.get("region", {}).get("review_status") or "unreviewed")
+            record.review_scope = str(data.get("review_scope", "partial"))
             record.path_count, record.evidence_percent, record.evidence_flags = _evidence_summary(data)
             image_meta = data.get("image", {}) if isinstance(data.get("image"), dict) else {}
             saved_width, saved_height = image_meta.get("width"), image_meta.get("height")

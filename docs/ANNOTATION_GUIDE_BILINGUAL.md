@@ -15,10 +15,12 @@ This checklist is for annotators and reviewers. The **逐图指导 / Image Guide
 
 ### 第 2 步：画对完整路线
 
-按 `P` 画路线，按 `V` 选择和修正控制点。每条线表示机器人能够持续通行的一条固定路径。
+按 `P` 画路线，按 `V` 选择和修正控制点。**标注的是稳定可导航通道的标准中心线，而不是某次机器人实际轨迹。** 每条线表示一条可复现的固定 corridor。
 
-- 人行道或单通道：沿实际可通行带的中间画。
-- 有中央隔离带、绿化带或护栏的双向道路：两侧分别画，绝不能画在中间分隔线上。
+- 单一人行道、园路或窄巷：沿可通行 corridor 的视觉中心附近画，不跟随某个人可能走过的偏线。
+- 无实体分隔的普通窄道路：整个道路是一个连续 corridor 时只画一条 canonical centerline，不要随意画两条平行线。
+- 有中央隔离带、绿化带或护栏的双向道路：视为两个独立 corridor，两侧各画一条，绝不能画在中间分隔线上；只在真实路口、开口或斑马线连接。
+- 宽广且没有稳定主轴的广场、开放铺装区或停车区域：不要凭感觉画一条“机器人可能走”的线，只标明确 walkway/corridor。
 - 清晰可见的小路、园路、连接支路要补齐。
 - 道路边界、草坪边缘、建筑轮廓不是路径，不要沿边画。
 - 路线到图片边缘时应停在边界内，不能伸出 RGB 图片。
@@ -33,20 +35,24 @@ This checklist is for annotators and reviewers. The **逐图指导 / Image Guide
 | 键 | 类别 | 什么时候用 |
 |---|---|---|
 | A | 清晰可见 | RGB 中能直接、清楚地看到路线 |
-| B | 弱视觉证据 | 有树荫、阴影或低对比，但仍能指出具体支持像素 |
+| B | 弱视觉证据 | 有树荫、阴影或低对比，但仍能指出具体支持像素；可在属性中选视觉困难原因 |
 | C | 仅语境推断 | RGB 很难确认，主要靠入口、出口或布局推断 |
 | D | 草稿错位 | 自动草稿明显偏离可见路线；先标问题，再修 geometry |
 | E | 不属于任务 | 该要素可能存在，但不属于机器人目标路径网络 |
 | U | 不确定 | 当前无法可靠判断，留给复核人员 |
 
-最重要的区分：**B 仍有具体图像证据；C 主要依靠上下文。** 被树遮住不等于自动标 B，更不能自动标 A。
+最重要的区分：**B = Weak Visual 仍必须能指出具体 RGB 视觉证据。** 如果主要依赖布局或生活常识判断路径存在，应标 C = Context Only。低分辨率不自动等于 B；图太糊而只能猜测时，应标 C。
+
+Evidence mode 中的 **E 是局部 Task Mismatch**：局部 E 只排除选中区间；只有右键或属性中的 **排除整条路径 / Exclude Entire Path** 才排除整个 polyline。整路排除后路线会变成灰色，仍可使用 **恢复整条路径 / Restore Entire Path**，并支持撤销/重做。
+
+若 B 的证据较弱，可在属性面板选择 `tree_canopy`、`shadow`、`low_contrast`、`low_resolution`、`narrow_structure`、`building_occlusion`、`mixed` 或 `other`。该字段可留空；把 B 改成其他类别时会自动清除。
 
 ### 第 4 步：保存前检查
 
 每张图切到下一张之前，逐项确认：
 
 - [ ] 清晰的主路、小路、人行道、园路和支路没有漏标；
-- [ ] 线位于机器人实际可走的位置；
+- [ ] 线位于稳定可导航通道的标准中心线上，而不是某次机器人轨迹；
 - [ ] 双向道路没有画在中央隔离带或双黄线上；
 - [ ] 没有路线伸出图片范围；
 - [ ] 所有路线区间都有 A/B/C/D/E/U；
@@ -67,10 +73,12 @@ This checklist is for annotators and reviewers. The **逐图指导 / Image Guide
 
 ### Step 2: draw complete paths in the right place
 
-Press `P` to draw and `V` to select or edit control points. Each polyline represents one fixed route that a robot can continuously travel.
+Press `P` to draw and `V` to select or edit control points. **Annotate the canonical centerline of a stable navigable corridor, not an arbitrary robot trajectory.** Each polyline is a reproducible fixed corridor.
 
-- For a sidewalk or single corridor, draw near the center of the usable travel band.
-- For a divided road, draw each usable side separately. Never draw on the center separator, median, or double yellow line.
+- For a sidewalk, garden path, or narrow lane, draw near the visual center of the usable corridor.
+- For an undivided narrow road that is one continuous corridor, draw one canonical centerline, not two arbitrary parallel lines.
+- For a divided road, draw each usable side separately. Never draw on the center separator, median, or double yellow line; connect sides only at real openings, junctions, or crossings.
+- For a very wide open area without a stable travel axis, do not invent a polyline. Annotate only explicit walkways/corridors.
 - Add visible small paths, garden paths, connectors, and side roads.
 - Road boundaries, lawn edges, and building outlines are not paths.
 - Stop geometry inside the image boundary; never extend a path outside the RGB.
@@ -91,12 +99,16 @@ Press `X`, drag along a route, and then press a class key:
 | E | Task Mismatch | The feature may exist but is outside the robot navigation task |
 | U | Unsure | A reliable decision is not possible yet; leave it for review |
 
-The key distinction is: **B still has specific visual evidence; C relies mainly on context.** Occlusion does not automatically mean B, and it must never be promoted automatically to A.
+The key distinction is: **Weak Visual requires identifiable supporting evidence in the RGB image.** If the path is inferred mainly from layout or common sense rather than visible pixels, mark Context Only. Low resolution alone is not automatically B; if you can only guess, use C.
+
+In Evidence mode, **E is a local Task Mismatch span**: it excludes only the selected interval. Excluding the entire polyline requires the explicit **Exclude Entire Path** action in the context menu or inspector. The whole path becomes muted grey and can be restored with **Restore Entire Path**; both actions support undo/redo.
+
+For B, the inspector optionally records `visibility_issue`: `tree_canopy`, `shadow`, `low_contrast`, `low_resolution`, `narrow_structure`, `building_occlusion`, `mixed`, or `other`. Leaving it unspecified is valid. Repainting B as another class clears the field.
 
 ### Step 4: check before moving on
 
 - [ ] Major roads, visible small paths, sidewalks, garden paths, and connectors are covered.
-- [ ] Every line is where the robot can actually travel.
+- [ ] Every line is the canonical centerline of a stable navigable corridor, not an arbitrary robot trajectory.
 - [ ] No divided road is represented by a line on its center separator.
 - [ ] No geometry extends outside the image.
 - [ ] Every path span has an A/B/C/D/E/U label.

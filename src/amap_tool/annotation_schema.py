@@ -38,6 +38,18 @@ EVIDENCE_COLORS = {
     "task_mismatch": "#777775",
     "uncertain": "#607d8b",
 }
+VISIBILITY_ISSUES = (
+    "none",
+    "tree_canopy",
+    "shadow",
+    "low_contrast",
+    "low_resolution",
+    "narrow_structure",
+    "building_occlusion",
+    "mixed",
+    "other",
+)
+REVIEW_SCOPES = ("partial", "full_image")
 
 
 def polyline_length(points: Iterable[Point]) -> float:
@@ -129,6 +141,12 @@ def _normalise_span(span: dict, total: float) -> dict | None:
     result["start_s"], result["end_s"] = start, end
     result.setdefault("review_confidence", "medium")
     result.setdefault("note", "")
+    if result.get("evidence") == "weak_visual":
+        issue = result.get("visibility_issue")
+        if issue not in VISIBILITY_ISSUES or issue == "none":
+            result.pop("visibility_issue", None)
+    else:
+        result.pop("visibility_issue", None)
     return result
 
 
@@ -140,7 +158,10 @@ def normalise_spans(spans: Iterable[dict], total: float) -> list[dict]:
         if (
             merged
             and abs(merged[-1]["end_s"] - span["start_s"]) <= 1e-6
-            and all(merged[-1].get(key) == span.get(key) for key in ("evidence", "review_confidence", "note"))
+            and all(
+                merged[-1].get(key) == span.get(key)
+                for key in ("evidence", "review_confidence", "note", "visibility_issue")
+            )
         ):
             merged[-1]["end_s"] = span["end_s"]
         else:
@@ -156,10 +177,15 @@ def assign_evidence_span(
     *,
     review_confidence: str = "medium",
     note: str = "",
+    visibility_issue: str = "none",
 ) -> None:
     """Replace evidence over one local interval without splitting visible geometry."""
     if evidence not in EVIDENCE_LABELS:
         raise ValueError(f"unknown evidence class: {evidence}")
+    if visibility_issue not in VISIBILITY_ISSUES:
+        raise ValueError(f"unknown visibility issue: {visibility_issue}")
+    if evidence != "weak_visual" and visibility_issue != "none":
+        raise ValueError("visibility_issue is only valid for weak_visual evidence")
     total = polyline_length(segment.get("points", []))
     start, end = sorted((max(0.0, min(float(start_s), total)), max(0.0, min(float(end_s), total))))
     if end - start <= 1e-6:
@@ -171,6 +197,8 @@ def assign_evidence_span(
         "review_confidence": review_confidence,
         "note": note,
     }
+    if evidence == "weak_visual" and visibility_issue != "none":
+        replacement["visibility_issue"] = visibility_issue
     remaining = []
     for old in normalise_spans(segment.get("evidence_spans", []), total):
         if old["end_s"] <= start or old["start_s"] >= end:
@@ -188,8 +216,6 @@ def assign_evidence_span(
     if evidence == "draft_misalignment":
         segment["geometry_review_required"] = True
         segment["geometry_fixed"] = False
-    if evidence == "task_mismatch":
-        segment["excluded_from_task"] = True
     update_segment_review_status(segment)
 
 
@@ -241,6 +267,7 @@ def new_segment(edge_id: str, points: Iterable[Point], path_type: str = "pedestr
         "source": source,
         "evidence_spans": [],
         "excluded_from_task": False,
+        "whole_path_exclusion_confirmed": False,
         "geometry_review_required": False,
         "geometry_fixed": False,
         "review_status": "unreviewed",
@@ -258,6 +285,7 @@ def empty_document(image_id: str, source_path: str, width: int, height: int, *, 
             "region": region,
         },
         "annotation_status": "unreviewed",
+        "review_scope": "partial",
         "segments": [],
         "ignore_regions": [],
     }
@@ -279,6 +307,7 @@ def upgrade_document(
         document = original
         document["schema_version"] = SCHEMA_VERSION
         document.setdefault("annotation_status", "unreviewed")
+        document.setdefault("review_scope", "partial")
         document.setdefault("ignore_regions", [])
     else:
         region_data = original.get("region", {})
@@ -317,6 +346,8 @@ def upgrade_document(
                     segment[key] = copy.deepcopy(edge[key])
             document["segments"].append(segment)
     document.setdefault("image_id", image_id or Path(source_path).stem)
+    if document.get("review_scope") not in REVIEW_SCOPES:
+        document["review_scope"] = "partial"
     image = document.setdefault("image", {})
     image.setdefault("source_path", source_path)
     image.setdefault("width", int(width))
@@ -330,11 +361,28 @@ def upgrade_document(
         segment.setdefault("source", "manual")
         segment.setdefault("evidence_spans", [])
         segment.setdefault("excluded_from_task", False)
+        segment.setdefault("whole_path_exclusion_confirmed", False)
         segment.setdefault("geometry_review_required", False)
         segment.setdefault("geometry_fixed", False)
         segment.setdefault("review_status", "unreviewed")
         segment["points"] = [[float(p[0]), float(p[1])] for p in segment.get("points", [])]
         segment["evidence_spans"] = normalise_spans(segment["evidence_spans"], polyline_length(segment["points"]))
+        total = polyline_length(segment["points"])
+        task_mismatch_length = sum(
+            span["end_s"] - span["start_s"]
+            for span in segment["evidence_spans"]
+            if span.get("evidence") == "task_mismatch"
+        )
+        if (
+            is_v2
+            and segment.get("excluded_from_task")
+            and not segment.get("whole_path_exclusion_confirmed")
+            and task_mismatch_length > 1e-6
+        ):
+            segment["legacy_exclusion_ambiguous"] = True
+            segment["legacy_exclusion_coverage"] = (
+                "full" if total <= 1e-6 or task_mismatch_length >= total - 0.5 else "partial"
+            )
         update_segment_review_status(segment)
     return document, not is_v2
 
@@ -369,16 +417,29 @@ def export_derived(document: dict, *, trusted_only: bool = False) -> dict:
         "export_type": "trusted_evaluation" if trusted_only else "training",
         "valid_positive_polyline": [],
         "ignore_spans": [],
+        "excluded_spans": [],
         "excluded_edges": [],
-        "warning": "Unlabelled image area is not reliable background ground truth.",
+        "ambiguous_exclusions": [],
+        "review_scope": document.get("review_scope", "partial"),
+        "warning": "Unlabelled image area is not automatically reliable background.",
     }
     for segment in document.get("segments", []):
         edge_id = segment.get("edge_id", "")
         points = segment.get("points", [])
         total = polyline_length(points)
-        if segment.get("excluded_from_task"):
+        ambiguous = bool(segment.get("legacy_exclusion_ambiguous"))
+        if segment.get("excluded_from_task") and not ambiguous:
             output["excluded_edges"].append({"edge_id": edge_id, "reason": "task_mismatch", "points": copy.deepcopy(points)})
             continue
+        if ambiguous:
+            output["ambiguous_exclusions"].append(
+                {
+                    "edge_id": edge_id,
+                    "excluded_from_task": True,
+                    "task_mismatch_coverage": segment.get("legacy_exclusion_coverage", "partial"),
+                    "message": "Legacy local Task Mismatch conflicts with whole-path exclusion; human confirmation required.",
+                }
+            )
         for span in normalise_spans(segment.get("evidence_spans", []), total):
             evidence = span.get("evidence")
             record = {
@@ -389,10 +450,13 @@ def export_derived(document: dict, *, trusted_only: bool = False) -> dict:
                 "end_s": span["end_s"],
                 "points": polyline_slice(points, span["start_s"], span["end_s"]),
             }
+            if evidence == "weak_visual" and span.get("visibility_issue") in VISIBILITY_ISSUES[1:]:
+                record["visibility_issue"] = span["visibility_issue"]
             if evidence in ("clear_visual", "weak_visual"):
                 output["valid_positive_polyline"].append(record)
             elif evidence == "task_mismatch":
-                output["excluded_edges"].append(record)
+                if not trusted_only:
+                    output["excluded_spans"].append(record)
             elif not trusted_only:
                 output["ignore_spans"].append(record)
         if not trusted_only:

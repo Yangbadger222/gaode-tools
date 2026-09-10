@@ -126,6 +126,18 @@ def test_existing_v2_upgrade_is_preferred_without_overwriting_v1(tmp_path):
     assert record.annotation_schema_version == "2"
 
 
+def test_review_scope_is_indexed_without_treating_it_as_background_truth(tmp_path):
+    image(tmp_path / "a.png")
+    data = v2("a")
+    data["review_scope"] = "full_image"
+    (tmp_path / "a.json").write_text(json.dumps(data), encoding="utf-8")
+
+    result = scan_dataset(tmp_path)
+
+    assert result.records[0].review_scope == "full_image"
+    assert result.full_image_reviewed_count == 1
+
+
 def test_annotation_size_mismatch_is_reported(tmp_path):
     image(tmp_path / "a.png")
     (tmp_path / "a.json").write_text(json.dumps(v2("a", 10, 10)), encoding="utf-8")

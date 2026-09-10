@@ -68,6 +68,7 @@ from .annotation_schema import (
     EVIDENCE_BY_KEY,
     EVIDENCE_COLORS,
     EVIDENCE_LABELS,
+    VISIBILITY_ISSUES,
     empty_document,
     evidence_coverage,
     export_derived,
@@ -615,6 +616,11 @@ class AnnotatorWindow(QMainWindow):
         self.review_hint = QLabel()
         self.review_hint.setWordWrap(True)
         self.review_hint.setObjectName("hintBox")
+        self.review_scope_label = QLabel()
+        self.review_scope_label.setObjectName("scopeLabel")
+        self.mark_full_review_button = QPushButton()
+        self.mark_full_review_button.clicked.connect(self.mark_full_image_reviewed)
+        self.register_help(self.mark_full_review_button, "help_mark_full_image_reviewed")
         self.auto_advance = QCheckBox()
         self.auto_advance.setChecked(True)
         self.mark_reviewed_button = QPushButton()
@@ -624,6 +630,8 @@ class AnnotatorWindow(QMainWindow):
         review_layout.addWidget(self.review_progress)
         review_layout.addWidget(self.review_details)
         review_layout.addWidget(self.review_hint)
+        review_layout.addWidget(self.review_scope_label)
+        review_layout.addWidget(self.mark_full_review_button)
         review_layout.addWidget(self.auto_advance)
         review_layout.addWidget(self.mark_reviewed_button)
         review_layout.addStretch()
@@ -639,6 +647,13 @@ class AnnotatorWindow(QMainWindow):
         self.guide_body = QLabel()
         self.guide_body.setWordWrap(True)
         self.guide_body.setObjectName("guideBody")
+        self.guide_definition = QLabel()
+        self.guide_definition.setWordWrap(True)
+        self.guide_definition.setObjectName("hintBox")
+        self.guide_ambiguity_warning = QLabel()
+        self.guide_ambiguity_warning.setWordWrap(True)
+        self.guide_ambiguity_warning.setObjectName("warningBox")
+        self.guide_ambiguity_warning.hide()
         self.guide_rules = QLabel()
         self.guide_rules.setWordWrap(True)
         self.guide_rules.setObjectName("guideRules")
@@ -659,6 +674,8 @@ class AnnotatorWindow(QMainWindow):
         guide_layout.addSpacing(4)
         guide_layout.addWidget(self.guide_title)
         guide_layout.addWidget(self.guide_body)
+        guide_layout.addWidget(self.guide_definition)
+        guide_layout.addWidget(self.guide_ambiguity_warning)
         guide_layout.addSpacing(8)
         guide_layout.addWidget(self.guide_rules)
         guide_layout.addSpacing(8)
@@ -871,9 +888,10 @@ class AnnotatorWindow(QMainWindow):
         self.zoom_label = QLabel()
         self.cursor_label = QLabel()
         self.save_label = QLabel("")
+        self.scope_label = QLabel("")
         status.addWidget(self.status_message, 1)
         status.addPermanentWidget(self.nav_label)
-        for label in (self.native_label, self.zoom_label, self.cursor_label, self.save_label):
+        for label in (self.scope_label, self.native_label, self.zoom_label, self.cursor_label, self.save_label):
             label.setObjectName("statusValue")
             status.addPermanentWidget(label)
 
@@ -913,6 +931,7 @@ class AnnotatorWindow(QMainWindow):
         self.review_hint.setText(self.t("review_hint"))
         self.auto_advance.setText(self.t("auto_advance"))
         self.mark_reviewed_button.setText(self.t("mark_reviewed"))
+        self.mark_full_review_button.setText(self.t("mark_full_image_reviewed"))
         for check in self.layer_checks.values():
             check.setText(self.t(str(check.property("textKey"))))
         self.layers_layout.labelForField(self.draft_slider).setText(self.t("draft_opacity"))
@@ -931,6 +950,13 @@ class AnnotatorWindow(QMainWindow):
         self.guide_evidence_button.setText(self.t("guide_evidence"))
         self.guide_save_next_button.setText(self.t("guide_save_next"))
         self.guide_rules.setText(self.t("guide_rules"))
+        self.guide_definition.setText(self.t("canonical_hint"))
+        full_review = bool(self.m and self.m.data.get("review_scope") == "full_image")
+        self.review_scope_label.setText(
+            f"{self.t('review_scope')}: {self.t('review_scope_full' if full_review else 'review_scope_partial')}"
+        )
+        self.mark_full_review_button.setText(self.t("review_scope_full") if full_review else self.t("mark_full_image_reviewed"))
+        self.scope_label.setText(self.t("full_review_status") if full_review else "")
         self.dataset_menu.setTitle(self.t("menu_dataset"))
         self.edit_menu.setTitle(self.t("menu_edit"))
         self.view_menu.setTitle(self.t("menu_view"))
@@ -989,6 +1015,8 @@ class AnnotatorWindow(QMainWindow):
         #panelTitle { font-size: 15px; font-weight: 600; }
         #muted { color: #6f6d68; }
         #hintBox { color: #454943; background: #ecefe9; border: 1px solid #d0d9d0; border-radius: 7px; padding: 10px; }
+        #warningBox { color: #744c2b; background: #f4e8da; border: 1px solid #dfc2a4; border-radius: 7px; padding: 8px; }
+        #scopeLabel { color: #3f5d47; background: #e7eee8; border: 1px solid #c7d6c9; border-radius: 6px; padding: 6px; font-weight: 600; }
         #canvasLabel { background: #343431; color: #e4e2dc; padding: 4px 8px; }
         #cleanBadge { color: #31563e; background: #d9e5da; border: 1px solid #b7cab9; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 600; }
         #navLabel, #statusValue { color: #65635f; padding: 0 6px; }
@@ -1730,13 +1758,25 @@ class AnnotatorWindow(QMainWindow):
             )
             if active:
                 scene.addPath(_path(segment["points"]), _pen("#f2eee4", 7.0, opacity=0.72)).setZValue(9)
-            base_color = "#a89f88" if source == "draft" else PATH_COLORS.get(segment.get("path_type"), "#b85c52")
-            opacity = self.draft_opacity if source == "draft" else 0.86
+            whole_excluded = bool(segment.get("excluded_from_task"))
+            base_color = (
+                "#777775"
+                if whole_excluded
+                else "#a89f88"
+                if source == "draft"
+                else PATH_COLORS.get(segment.get("path_type"), "#b85c52")
+            )
+            opacity = 0.5 if whole_excluded else self.draft_opacity if source == "draft" else 0.86
             scene.addPath(
                 _path(segment["points"]),
-                _pen(base_color, 2.5 if not active else 3.5, opacity=opacity, dashed=source == "draft"),
+                _pen(
+                    base_color,
+                    2.5 if not active else 3.5,
+                    opacity=opacity,
+                    dashed=source == "draft" or whole_excluded,
+                ),
             ).setZValue(10)
-            if evidence_visible:
+            if evidence_visible and not whole_excluded:
                 for span in segment.get("evidence_spans", []):
                     points = polyline_slice(segment["points"], span["start_s"], span["end_s"])
                     color = EVIDENCE_COLORS.get(span.get("evidence"), "#607d8b")
@@ -2103,6 +2143,13 @@ class AnnotatorWindow(QMainWindow):
         self.zoom_label.setText(self.t("zoom", percent=self.active_view().transform().m11() * 100))
         self.undo_action.setEnabled(bool(self.m and self.m.undo_stack))
         self.redo_action.setEnabled(bool(self.m and self.m.redo_stack))
+        full_review = bool(self.m and self.m.data.get("review_scope") == "full_image")
+        self.review_scope_label.setText(
+            f"{self.t('review_scope')}: {self.t('review_scope_full' if full_review else 'review_scope_partial')}"
+        )
+        self.mark_full_review_button.setText(self.t("review_scope_full") if full_review else self.t("mark_full_image_reviewed"))
+        self.mark_full_review_button.setEnabled(bool(self.m and not full_review and not self.is_read_only()))
+        self.scope_label.setText(self.t("full_review_status") if full_review else "")
         if self.dataset and self.dataset.read_only:
             self.save_label.setText(self.t("read_only"))
             self.save_action.setEnabled(False)
@@ -2125,7 +2172,14 @@ class AnnotatorWindow(QMainWindow):
         if not self.m:
             self.guide_title.setText(self.t("guide_title_empty"))
             self.guide_body.setText(self.t("guide_body_empty"))
+            self.guide_ambiguity_warning.hide()
             return
+        ambiguous_count = sum(
+            bool(segment.get("legacy_exclusion_ambiguous")) for segment in self.m.data.get("segments", [])
+        )
+        self.guide_ambiguity_warning.setVisible(ambiguous_count > 0)
+        if ambiguous_count:
+            self.guide_ambiguity_warning.setText(self.t("legacy_exclusion_warning", count=ambiguous_count))
         stats = self.m.stats()
         reviewed = self.m.data.get("annotation_status") == "reviewed"
         if reviewed and self.dirty:
@@ -2183,6 +2237,32 @@ class AnnotatorWindow(QMainWindow):
             combo.setEnabled(not self.is_read_only())
             combo.currentIndexChanged.connect(lambda _index, widget=combo: self.change_segment_attr("path_type", widget.currentData()))
             self.form.addRow("路线类型" if self.language == "zh_CN" else "Path type", combo)
+            if segment.get("legacy_exclusion_ambiguous"):
+                warning = QLabel(
+                    "检测到旧版局部 E 与整条排除状态冲突。请确认整条排除，或恢复整条路径。"
+                    if self.language == "zh_CN"
+                    else "Legacy local E conflicts with whole-path exclusion. Confirm exclusion or restore the path."
+                )
+                warning.setWordWrap(True)
+                warning.setObjectName("warningBox")
+                confirm = QPushButton("确认排除整条路径" if self.language == "zh_CN" else "Confirm Exclude Entire Path")
+                restore = QPushButton("恢复整条路径" if self.language == "zh_CN" else "Restore Entire Path")
+                confirm.clicked.connect(lambda _checked=False, edge=segment["edge_id"]: self.exclude_edge(edge))
+                restore.clicked.connect(lambda _checked=False, edge=segment["edge_id"]: self.restore_edge(edge))
+                self.form.addRow(warning)
+                self.form.addRow(confirm)
+                self.form.addRow(restore)
+            elif segment.get("excluded_from_task"):
+                state = QLabel("已排除整条路径" if self.language == "zh_CN" else "Excluded Entire Path")
+                state.setObjectName("warningBox")
+                restore = QPushButton("恢复整条路径" if self.language == "zh_CN" else "Restore Entire Path")
+                restore.clicked.connect(lambda _checked=False, edge=segment["edge_id"]: self.restore_edge(edge))
+                self.form.addRow(state)
+                self.form.addRow(restore)
+            else:
+                exclude = QPushButton("排除整条路径" if self.language == "zh_CN" else "Exclude Entire Path")
+                exclude.clicked.connect(lambda _checked=False, edge=segment["edge_id"]: self.exclude_edge(edge))
+                self.form.addRow(exclude)
             coverage = evidence_coverage(segment)
             review_status = self.t("status_reviewed") if segment.get("review_status") == "reviewed" else self.t("status_unreviewed")
             self.form.addRow("审核状态" if self.language == "zh_CN" else "Review status", QLabel(review_status))
@@ -2209,6 +2289,29 @@ class AnnotatorWindow(QMainWindow):
                 )
                 if span:
                     self.form.addRow("Evidence", QLabel(self.evidence_label(span.get("evidence", ""))))
+                    if span.get("evidence") == "weak_visual":
+                        issue_combo = QComboBox()
+                        issue_labels = {
+                            "none": ("未指定", "Unspecified"),
+                            "tree_canopy": ("树冠", "Tree canopy"),
+                            "shadow": ("阴影", "Shadow"),
+                            "low_contrast": ("低对比度", "Low contrast"),
+                            "low_resolution": ("低分辨率", "Low resolution"),
+                            "narrow_structure": ("结构极窄", "Narrow structure"),
+                            "building_occlusion": ("建筑遮挡", "Building occlusion"),
+                            "mixed": ("混合原因", "Mixed"),
+                            "other": ("其他", "Other"),
+                        }
+                        for value in VISIBILITY_ISSUES:
+                            issue_combo.addItem(issue_labels[value][0 if self.language == "zh_CN" else 1], value)
+                        issue_combo.setCurrentIndex(max(0, issue_combo.findData(span.get("visibility_issue", "none"))))
+                        issue_combo.setEnabled(not self.is_read_only())
+                        issue_combo.currentIndexChanged.connect(
+                            lambda _index, widget=issue_combo, edge=segment["edge_id"], start=self.sel[2], end=self.sel[3]: self.change_span_attr(
+                                edge, start, end, "visibility_issue", widget.currentData()
+                            )
+                        )
+                        self.form.addRow("视觉困难原因" if self.language == "zh_CN" else "Weak reason", issue_combo)
                     confidence = QComboBox()
                     for value, zh, en in (("high", "高", "High"), ("medium", "中", "Medium"), ("low", "低", "Low")):
                         confidence.addItem(zh if self.language == "zh_CN" else en, value)
@@ -2267,6 +2370,17 @@ class AnnotatorWindow(QMainWindow):
         self.m._commit(before)
         self.changed(model_already_changed=True)
 
+    def mark_full_image_reviewed(self) -> None:
+        if not self.m or self.is_read_only() or self.m.data.get("review_scope") == "full_image":
+            return
+        self.m.set_review_scope("full_image")
+        self.changed(model_already_changed=True)
+        self.status_message.setText(
+            "整图已审核；未标像素仍不会自动成为可靠背景"
+            if self.language == "zh_CN"
+            else "FULL IMAGE REVIEWED — unlabelled pixels are still not automatically reliable background"
+        )
+
     def show_context_menu(self, global_pos, scene_pos: QPointF) -> None:
         hit = self.nearest_segment(scene_pos.x(), scene_pos.y())
         if not hit or hit[3] > self.hit_tolerance() or not self.m:
@@ -2288,9 +2402,9 @@ class AnnotatorWindow(QMainWindow):
             path_menu.addAction(self.path_type_label(path_type), lambda _checked=False, value=path_type: self.set_path_type(edge_id, value))
         menu.addAction("审核 Evidence" if zh else "Review Evidence", lambda: self.set_mode("EVIDENCE"))
         if self.m.segment(edge_id).get("excluded_from_task"):
-            menu.addAction("恢复到任务" if zh else "Restore to Task", lambda: self.restore_edge(edge_id))
+            menu.addAction("恢复整条路径" if zh else "Restore Entire Path", lambda: self.restore_edge(edge_id))
         else:
-            menu.addAction("标为任务外" if zh else "Mark Excluded", lambda: self.exclude_edge(edge_id))
+            menu.addAction("排除整条路径" if zh else "Exclude Entire Path", lambda: self.exclude_edge(edge_id))
         if self.m.segment(edge_id).get("geometry_review_required"):
             menu.addAction("几何已修正" if zh else "Geometry Fixed", lambda: self.geometry_fixed(edge_id))
         menu.addSeparator()
@@ -2321,18 +2435,21 @@ class AnnotatorWindow(QMainWindow):
         self.changed(model_already_changed=True)
 
     def exclude_edge(self, edge_id) -> None:
-        segment = self.m.segment(edge_id)
-        if polyline_length(segment["points"]) > 0:
-            self.m.assign_evidence(edge_id, 0, polyline_length(segment["points"]), "task_mismatch")
-        self.changed(model_already_changed=True)
-
-    def restore_edge(self, edge_id) -> None:
-        self.m.set_attr(edge_id, "excluded_from_task", False)
+        self.m.set_segment_excluded(edge_id, True)
         self.changed(model_already_changed=True)
         self.status_message.setText(
-            "路线已恢复；请用 A/B/C/D/U 重标原来的 E 区间"
+            "已排除整条路径：整条路径将不会进入导航任务数据"
             if self.language == "zh_CN"
-            else "Edge restored; repaint any E span with A/B/C/D/U"
+            else "Entire path excluded: it will not enter navigation task data"
+        )
+
+    def restore_edge(self, edge_id) -> None:
+        self.m.set_segment_excluded(edge_id, False)
+        self.changed(model_already_changed=True)
+        self.status_message.setText(
+            "整条路径已恢复；局部 E 区间保持不变"
+            if self.language == "zh_CN"
+            else "Entire path restored; local E spans remain unchanged"
         )
 
     def geometry_fixed(self, edge_id) -> None:

@@ -55,7 +55,7 @@ macOS 的 Qt Cocoa 平台插件会在程序导入 UI 前自动检查并清除异
 
 按 `P` 进入 Draw：单击加点，双击或 `Enter` 完成；`Backspace` 撤回本次最后一点，`Esc` 取消未完成路线。程序不会自动拉直、补路或改变 geometry。
 
-按 `V` 选择路线或控制点。拖控制点修改；双击路线 segment 插点；方向键移动选中点 1 个 native pixel，`Shift+方向键` 移动 5 px。右键可 Insert、Split、Merge、改 Path Type、标 Excluded 或删除。
+按 `V` 选择路线或控制点。拖控制点修改；双击路线 segment 插点；方向键移动选中点 1 个 native pixel，`Shift+方向键` 移动 5 px。右键可 Insert、Split、Merge、改 Path Type、**排除整条路径 / Exclude Entire Path** 或删除。整路排除会把整条线显示为灰色，并可用 Restore Entire Path 恢复；局部 E 不会触发整路排除。
 
 Path Type 与 Evidence 是两回事。`pedestrian_path`、`vehicle_road`、`narrow_path`、`service_path` 中任何一种都可能是 Clear、Weak 或 Context。
 
@@ -75,10 +75,14 @@ Path Type 与 Evidence 是两回事。`pedestrian_path`、`vehicle_road`、`narr
 | B | Weak Visual | 树荫、阴影、低对比等影响明显，但仍能指出支持路径的具体像素 |
 | C | Context Only | RGB 本身很难确认，主要靠入口出口、建筑布局或常识推断 |
 | D | Draft Misaligned | draft / OSM 的 geometry 明显偏离可见路径；只标记问题，不自动修 |
-| E | Task Mismatch | feature 可能存在，但不属于机器人目标导航网络；保留 source geometry，不删除 |
+| E | Task Mismatch | 选中的局部区间不属于机器人目标导航网络；保留 source geometry，不删除整条路线 |
 | U | Unsure | 人工无法可靠决定，留给后续 review |
 
-判断 B/C 时只问两句：B 是“我还能指出图里的具体证据”；C 是“我主要相信这里按布局应该有路”。
+判断 B/C 时只问两句：B 是“我还能指出图里的具体 RGB 证据”；C 是“我主要相信这里按布局或常识应该有路”。B 可在属性面板补充 `visibility_issue`，但不要求每次都填写。
+
+### Canonical centerline
+
+路线不是某一次机器人实际轨迹，也不是 OSM 几何或道路边界。标注的是稳定可导航通道的标准中心线：单一 corridor 沿视觉中心；无实体分隔的窄道路只画一条；有实体中央隔离时两侧各画一条。宽广开放区域没有固定主轴时不凭感觉画线。
 
 ## 6. Clean RGB 与 Review View
 
@@ -99,12 +103,12 @@ Path Type 与 Evidence 是两回事。`pedestrian_path`、`vehicle_road`、`narr
 
 ## 8. Review 与导出
 
-每张图按 polyline length 计算 Evidence 完成率，而不是按 edge 数。Review 页显示未审核、Weak 和 Context 长度。没有 path 的图片也可人工 Mark image reviewed。
+每张图按 polyline length 计算 Evidence 完成率，而不是按 edge 数。Review 页显示未审核、Weak 和 Context 长度。没有 path 的图片也可人工 Mark image reviewed。`review_scope` 独立记录 `partial` 或 `full_image`；Evidence 100% 不会自动变成 `full_image`，必须人工点 **Mark Full Image Reviewed**。`full_image` 也不表示未标像素自动是可靠 background。
 
 Dataset 菜单提供两个派生导出，不改源 annotation：
 
-- Export for Training：A/B 为 valid positive；C/D/U 和未审核 span 为 ignore；E 为 excluded。
-- Export Trusted Evaluation：只导出 A/B，并保留原 Evidence 类型，便于分别计算 Clear/Weak Recall。
+- Export for Training：A/B 为 valid positive；C/D/U 和未审核 span 为 ignore；局部 E 为 `excluded_spans`；明确整路排除才是 `excluded_edges`。
+- Export Trusted Evaluation：只导出 A/B，并保留 B 的 `visibility_issue`，便于未来按困难原因分组。
 
 未标图像区域不会自动变成可靠 background GT。
 
