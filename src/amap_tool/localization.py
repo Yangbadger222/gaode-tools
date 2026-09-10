@@ -1,0 +1,221 @@
+"""Small, dependency-free UI translation table for the annotation tool."""
+
+from __future__ import annotations
+
+
+DEFAULT_LANGUAGE = "zh_CN"
+SUPPORTED_LANGUAGES = ("zh_CN", "en_US")
+
+
+_TEXT: dict[str, dict[str, str]] = {
+    "app_title": {"zh_CN": "高德路径标注工具 V2", "en_US": "AMap Path Annotator V2"},
+    "chinese": {"zh_CN": "中文", "en_US": "Chinese"},
+    "english": {"zh_CN": "英文", "en_US": "English"},
+    "language": {"zh_CN": "语言", "en_US": "Language"},
+    "welcome_title": {"zh_CN": "高德路径标注工具", "en_US": "AMap Path Annotator"},
+    "welcome_subtitle": {
+        "zh_CN": "打开图片文件夹即可开始标注。原始 RGB 图片始终不会被修改。",
+        "en_US": "Open an image folder and start annotating. Original RGB files stay unchanged.",
+    },
+    "open_folder": {"zh_CN": "打开文件夹", "en_US": "Open Folder"},
+    "recent_folders": {"zh_CN": "最近打开", "en_US": "Recent Folders"},
+    "missing": {"zh_CN": "文件夹不存在", "en_US": "Missing"},
+    "remove": {"zh_CN": "移除", "en_US": "Remove"},
+    "no_folder": {"zh_CN": "尚未打开文件夹", "en_US": "No folder open"},
+    "dataset": {"zh_CN": "数据集", "en_US": "Dataset"},
+    "search_image": {"zh_CN": "搜索图片 ID", "en_US": "Search image_id"},
+    "filter_all": {"zh_CN": "全部", "en_US": "All"},
+    "filter_unreviewed": {"zh_CN": "未审核", "en_US": "Unreviewed"},
+    "filter_reviewed": {"zh_CN": "已审核", "en_US": "Reviewed"},
+    "filter_ambiguity": {"zh_CN": "含不确定段", "en_US": "Has Ambiguity"},
+    "filter_context": {"zh_CN": "含语境推断段", "en_US": "Has Context-only"},
+    "filter_misalignment": {"zh_CN": "含错位草稿", "en_US": "Has Misalignment"},
+    "filter_mismatch": {"zh_CN": "含任务外路线", "en_US": "Has Task mismatch"},
+    "status_reviewed": {"zh_CN": "已审核", "en_US": "Reviewed"},
+    "status_unreviewed": {"zh_CN": "未审核", "en_US": "Unreviewed"},
+    "status_missing": {"zh_CN": "图片缺失", "en_US": "Missing"},
+    "sidebar_item": {
+        "zh_CN": "{image_id}\n● {status}   {paths} 条路线\n证据完成 {percent:.0f}%",
+        "en_US": "{image_id}\n● {status}   {paths} paths\nEvidence {percent:.0f}%",
+    },
+    "dataset_summary": {
+        "zh_CN": "{total} 张 · {annotated} 张有标注 · {unreviewed} 张未审核",
+        "en_US": "{total} images · {annotated} annotated · {unreviewed} unreviewed",
+    },
+    "files_need_attention": {
+        "zh_CN": "⚠ {count} 个文件需要处理",
+        "en_US": "⚠ {count} file(s) need attention",
+    },
+    "assigned_regions": {"zh_CN": "已分配区域", "en_US": "Assigned regions"},
+    "region_tiles": {"zh_CN": "{count} 张 RGB 图", "en_US": "{count} RGB tiles"},
+    "region_count": {"zh_CN": "{count} 个区域", "en_US": "{count} regions"},
+    "image_navigation": {
+        "zh_CN": "  图片 {index}/{total}: {image_id}",
+        "en_US": "  Image {index}/{total}: {image_id}",
+    },
+    "region_navigation": {
+        "zh_CN": "  区域 {index}/{total}（共 {images} 张图）: {region_id}",
+        "en_US": "  Region {index}/{total} ({images} images): {region_id}",
+    },
+    "clean_rgb": {"zh_CN": "纯净 RGB", "en_US": "Clean RGB"},
+    "annotated": {"zh_CN": "标注叠加", "en_US": "Annotated"},
+    "inspector": {"zh_CN": "属性", "en_US": "Inspector"},
+    "review": {"zh_CN": "审核", "en_US": "Review"},
+    "guide": {"zh_CN": "逐图指导", "en_US": "Image Guide"},
+    "layers": {"zh_CN": "图层", "en_US": "Layers"},
+    "checks": {"zh_CN": "检查", "en_US": "Checks"},
+    "inspector_review": {"zh_CN": "标注与审核", "en_US": "Inspector / Review"},
+    "no_selected_path": {"zh_CN": "尚未选择路线", "en_US": "No selected path"},
+    "review_progress": {"zh_CN": "证据审核：{percent:.0f}%", "en_US": "Evidence reviewed: {percent:.0f}%"},
+    "review_details": {
+        "zh_CN": "未审核路线长度：{unreviewed:.0f} px\n语境推断：{context:.0f} px\n弱视觉证据：{weak:.0f} px",
+        "en_US": "Unreviewed path length: {unreviewed:.0f} px\nContext-only: {context:.0f} px\nWeak visual: {weak:.0f} px",
+    },
+    "review_hint": {
+        "zh_CN": "B — 弱视觉证据\n仍能指出图中的具体像素证据\n\nC — 仅语境推断\n主要依靠入口、布局或常识推断",
+        "en_US": "B — Weak Visual\nSpecific supporting pixels are still visible\n\nC — Context Only\nMainly inferred from entrances, layout, or context",
+    },
+    "auto_advance": {"zh_CN": "标完一段后自动跳到下一段", "en_US": "Auto-advance after evidence label"},
+    "mark_reviewed": {"zh_CN": "确认本图已审核", "en_US": "Mark image reviewed"},
+    "guide_title_empty": {"zh_CN": "第 1 步 · 先看清原图", "en_US": "Step 1 · Inspect the RGB"},
+    "guide_body_empty": {
+        "zh_CN": "先检查整张图，再画所有清晰、连续、机器人实际可走的固定路线。",
+        "en_US": "Inspect the full image, then draw every clear, continuous, fixed route the robot can actually use.",
+    },
+    "guide_title_evidence": {"zh_CN": "第 2 步 · 补路线并审核证据", "en_US": "Step 2 · Complete paths and review evidence"},
+    "guide_body_evidence": {
+        "zh_CN": "检查小路是否漏标、路线是否越界、双向道路是否落在各自可行驶侧；然后给未审核区间标 A/B/C/D/E/U。",
+        "en_US": "Check for missed small paths, out-of-image geometry, and divided roads drawn on each usable side; then label every remaining span A/B/C/D/E/U.",
+    },
+    "guide_title_confirm": {"zh_CN": "第 3 步 · 最终检查", "en_US": "Step 3 · Final check"},
+    "guide_body_confirm": {
+        "zh_CN": "Evidence 已完整。对照纯净 RGB 再检查一遍路线位置，然后确认本图已审核。",
+        "en_US": "Evidence is complete. Compare against Clean RGB once more, then mark this image reviewed.",
+    },
+    "guide_title_done": {"zh_CN": "本图已完成", "en_US": "This image is complete"},
+    "guide_body_done": {
+        "zh_CN": "标注和 Evidence 已审核，可以保存并进入下一张。",
+        "en_US": "Geometry and evidence are reviewed. Save and continue to the next image.",
+    },
+    "guide_rules": {
+        "zh_CN": "本图必须检查\n✓ 补齐清晰的人行道、园路和支路\n✓ 路线只画在机器人实际可走的位置\n✓ 双向道路不要画在中央隔离带上\n✓ 被树冠或阴影遮挡时不要凭空补成 A\n✓ 路线不应超出 RGB 图片范围",
+        "en_US": "Check on every image\n✓ Add visible sidewalks, garden paths, and side paths\n✓ Draw where the robot can actually travel\n✓ Never use a divided road's center separator\n✓ Do not invent A evidence under canopy or shadow\n✓ Keep geometry inside the RGB image",
+    },
+    "guide_clean": {"zh_CN": "查看纯净 RGB", "en_US": "View Clean RGB"},
+    "guide_draw": {"zh_CN": "开始/继续画路线", "en_US": "Draw / complete paths"},
+    "guide_evidence": {"zh_CN": "审核 Evidence", "en_US": "Review Evidence"},
+    "guide_save_next": {"zh_CN": "保存并下一张", "en_US": "Save + Next"},
+    "layer_rgb": {"zh_CN": "RGB 原图", "en_US": "RGB"},
+    "layer_draft": {"zh_CN": "草稿路线", "en_US": "Draft"},
+    "layer_manual": {"zh_CN": "人工路线", "en_US": "Manual Polyline"},
+    "layer_evidence": {"zh_CN": "Evidence 颜色", "en_US": "Evidence"},
+    "layer_points": {"zh_CN": "控制点", "en_US": "Control Points"},
+    "draft_opacity": {"zh_CN": "草稿透明度", "en_US": "Draft opacity"},
+    "evidence_opacity": {"zh_CN": "Evidence 透明度", "en_US": "Evidence opacity"},
+    "display": {"zh_CN": "图像显示", "en_US": "Display"},
+    "smooth": {"zh_CN": "平滑", "en_US": "Smooth"},
+    "pixel": {"zh_CN": "像素", "en_US": "Pixel"},
+    "select": {"zh_CN": "选择", "en_US": "Select"},
+    "draw": {"zh_CN": "画路线", "en_US": "Draw"},
+    "edit": {"zh_CN": "编辑", "en_US": "Edit"},
+    "evidence": {"zh_CN": "证据审核", "en_US": "Evidence"},
+    "undo": {"zh_CN": "撤销", "en_US": "Undo"},
+    "redo": {"zh_CN": "重做", "en_US": "Redo"},
+    "draft": {"zh_CN": "草稿", "en_US": "Draft"},
+    "evidence_color": {"zh_CN": "证据颜色", "en_US": "Evidence color"},
+    "review_view": {"zh_CN": "对照审核", "en_US": "Review View"},
+    "save": {"zh_CN": "保存", "en_US": "Save"},
+    "last_image": {"zh_CN": "上一张", "en_US": "Last Image"},
+    "next_image": {"zh_CN": "下一张", "en_US": "Next Image"},
+    "fit": {"zh_CN": "适应窗口", "en_US": "Fit"},
+    "toggle_dataset": {"zh_CN": "显示/隐藏数据集", "en_US": "Toggle Dataset Sidebar"},
+    "toggle_inspector": {"zh_CN": "显示/隐藏右侧栏", "en_US": "Toggle Inspector"},
+    "shortcuts": {"zh_CN": "快捷键与说明", "en_US": "Keyboard Shortcuts"},
+    "fit_image": {"zh_CN": "适应图片", "en_US": "Fit Image"},
+    "save_next": {"zh_CN": "保存并下一张", "en_US": "Save + Next"},
+    "search": {"zh_CN": "搜索", "en_US": "Search"},
+    "refresh_folder": {"zh_CN": "刷新文件夹", "en_US": "Refresh Folder"},
+    "dataset_settings": {"zh_CN": "数据集设置", "en_US": "Dataset Settings"},
+    "dataset_info": {"zh_CN": "数据集信息", "en_US": "Dataset Info"},
+    "export_training": {"zh_CN": "导出训练数据…", "en_US": "Export for Training…"},
+    "export_eval": {"zh_CN": "导出可信验证集…", "en_US": "Export Trusted Evaluation…"},
+    "delete_selection": {"zh_CN": "删除所选", "en_US": "Delete Selection"},
+    "menu_dataset": {"zh_CN": "数据集", "en_US": "Dataset"},
+    "menu_edit": {"zh_CN": "编辑", "en_US": "Edit"},
+    "menu_view": {"zh_CN": "视图", "en_US": "View"},
+    "menu_language": {"zh_CN": "语言", "en_US": "Language"},
+    "menu_help": {"zh_CN": "帮助", "en_US": "Help"},
+    "ready": {"zh_CN": "就绪", "en_US": "Ready"},
+    "native_image": {"zh_CN": "原图：{width}×{height}", "en_US": "Native image: {width}×{height}"},
+    "zoom": {"zh_CN": "缩放：{percent:.0f}%", "en_US": "Zoom: {percent:.0f}%"},
+    "cursor": {"zh_CN": "坐标：x={x:.1f}, y={y:.1f}", "en_US": "Cursor: x={x:.1f}, y={y:.1f}"},
+    "mode": {"zh_CN": "模式：{mode}", "en_US": "Mode: {mode}"},
+    "mode_SELECT": {"zh_CN": "选择", "en_US": "Select"},
+    "mode_EDIT": {"zh_CN": "编辑", "en_US": "Edit"},
+    "mode_DRAW_PATH": {"zh_CN": "画路线", "en_US": "Draw Path"},
+    "mode_EVIDENCE": {"zh_CN": "证据审核", "en_US": "Evidence"},
+    "clean_status": {"zh_CN": "纯净 RGB — 已隐藏所有标注", "en_US": "Clean RGB — overlays hidden"},
+    "unsaved": {"zh_CN": "未保存", "en_US": "Unsaved"},
+    "saved": {"zh_CN": "已保存", "en_US": "Saved"},
+    "read_only": {"zh_CN": "只读", "en_US": "READ ONLY"},
+    "path_vehicle": {"zh_CN": "车行道路", "en_US": "Vehicle road"},
+    "path_pedestrian": {"zh_CN": "人行道", "en_US": "Pedestrian path"},
+    "path_narrow": {"zh_CN": "窄路", "en_US": "Narrow path"},
+    "path_service": {"zh_CN": "后勤道路", "en_US": "Service path"},
+    "evidence_clear_visual": {"zh_CN": "A 清晰可见", "en_US": "A Clear Visual"},
+    "evidence_weak_visual": {"zh_CN": "B 弱视觉证据", "en_US": "B Weak Visual"},
+    "evidence_context_only": {"zh_CN": "C 仅语境推断", "en_US": "C Context Only"},
+    "evidence_draft_misalignment": {"zh_CN": "D 草稿错位", "en_US": "D Draft Misaligned"},
+    "evidence_task_mismatch": {"zh_CN": "E 不属于任务", "en_US": "E Task Mismatch"},
+    "evidence_uncertain": {"zh_CN": "U 不确定", "en_US": "U Unsure"},
+    "help_open": {
+        "zh_CN": "选择包含卫星 RGB 图片的文件夹。支持 PNG、JPEG、TIFF、WebP，也会自动配对同名 JSON。",
+        "en_US": "Choose a folder containing satellite RGB images. PNG, JPEG, TIFF, WebP, and matching JSON files are supported.",
+    },
+    "help_select": {"zh_CN": "选择路线或控制点。拖动控制点可精确修正路线。快捷键 V。", "en_US": "Select a path or control point. Drag points to correct geometry. Shortcut: V."},
+    "help_draw": {"zh_CN": "逐点画一条完整路线；双击或 Enter 完成。不要画道路边界或中央隔离带。快捷键 P。", "en_US": "Click points along one complete path; double-click or press Enter to finish. Avoid road edges and center separators. Shortcut: P."},
+    "help_edit": {"zh_CN": "编辑控制点；双击路线可以插入新点，也可右键拆分或合并路线。", "en_US": "Edit control points. Double-click a path to insert a point, or right-click to split and merge."},
+    "help_evidence": {"zh_CN": "沿路线拖选一个区间，再按 A/B/C/D/E/U 标记这一段的视觉依据。快捷键 X。", "en_US": "Drag along a path, then press A/B/C/D/E/U to label the selected evidence span. Shortcut: X."},
+    "help_undo": {"zh_CN": "撤销最近一次标注或几何修改。快捷键 Ctrl/Cmd+Z。", "en_US": "Undo the latest annotation or geometry edit. Shortcut: Ctrl/Cmd+Z."},
+    "help_redo": {"zh_CN": "恢复刚刚撤销的操作。快捷键 Ctrl/Cmd+Shift+Z。", "en_US": "Restore the last undone action. Shortcut: Ctrl/Cmd+Shift+Z."},
+    "help_clean": {"zh_CN": "临时隐藏路线、Evidence 和控制点，只检查原始 RGB。不会修改图片或标注。快捷键 `。", "en_US": "Temporarily hide paths, evidence, and control points to inspect untouched RGB. Nothing is modified. Shortcut: `."},
+    "help_draft": {"zh_CN": "显示或隐藏自动生成的草稿路线，不会删除数据。", "en_US": "Show or hide automatically generated draft geometry without deleting it."},
+    "help_evidence_color": {"zh_CN": "显示或隐藏路线上的 Evidence 分类颜色，不会修改标签。", "en_US": "Show or hide evidence colors without changing labels."},
+    "help_review_view": {"zh_CN": "左右并排显示纯净 RGB 和标注叠加图，缩放与平移保持同步。快捷键 R。", "en_US": "Compare Clean RGB and annotations side by side with synchronized zoom and pan. Shortcut: R."},
+    "help_zoom": {"zh_CN": "只改变屏幕显示比例，不改变原图和坐标。也可用滚轮或触控板捏合。", "en_US": "Change display scale only; image pixels and coordinates stay unchanged. Wheel and pinch also work."},
+    "help_save": {"zh_CN": "安全写入当前 JSON；原始 RGB 永不修改。快捷键 Ctrl/Cmd+S。", "en_US": "Safely write the current JSON. Original RGB is never modified. Shortcut: Ctrl/Cmd+S."},
+    "help_previous": {"zh_CN": "先保存当前修改，再打开上一张图片。", "en_US": "Save current changes, then open the previous image."},
+    "help_next": {"zh_CN": "先保存当前修改，再打开下一张图片。", "en_US": "Save current changes, then open the next image."},
+    "help_mark_reviewed": {"zh_CN": "在路线和所有 Evidence 都检查完后确认本图。Evidence 未完成时不会放行。", "en_US": "Confirm this image only after geometry and all evidence are checked. Incomplete evidence is blocked."},
+    "help_dataset_issues": {"zh_CN": "查看损坏图片、孤立 JSON、尺寸不匹配或输出不可写等文件问题。", "en_US": "Review damaged images, orphan JSON files, size mismatches, and unwritable output issues."},
+    "help_guide_clean": {"zh_CN": "隐藏所有叠加层，专心查看这一张原始 RGB。", "en_US": "Hide all overlays and inspect this image's original RGB."},
+    "help_guide_draw": {"zh_CN": "进入画路线模式，补全本图所有明确可见的固定路径。", "en_US": "Enter Draw mode and add every clearly visible fixed path in this image."},
+    "help_guide_evidence": {"zh_CN": "进入 Evidence 模式，逐段判断路线在 RGB 中的证据强弱。", "en_US": "Enter Evidence mode and review the visual support for each path span."},
+    "help_guide_save_next": {"zh_CN": "安全保存当前标注，然后切换到下一张图片。", "en_US": "Safely save this annotation and continue to the next image."},
+    "tooltip_title": {"zh_CN": "这个按钮做什么？", "en_US": "What does this do?"},
+    "shortcuts_body": {
+        "zh_CN": "Space + 拖动 / 中键拖动　平移\n滚轮 / 触控板捏合　　　 缩放\nF　　　　　　　　　　 适应图片\n1 / 2 / 4 / 8　　　　　100% / 200% / 400% / 800%\n`　　　　　　　　　　 纯净 RGB\nR　　　　　　　　　　 对照审核\nV / P / X　　　　　　 选择 / 画路线 / Evidence\nA/B/C/D/E/U　　　　　 Evidence 分类\nN / Shift+N　　　　　 下一个 / 上一个未审核区间\n← / →　　　　　　　　上一张 / 下一张\nCtrl/Cmd+Z　　　　　　撤销\nCtrl/Cmd+Shift+Z　　　 重做\nDelete　　　　　　　　删除所选\nCtrl/Cmd+S　　　　　　保存\nCtrl/Cmd+Enter　　　　 保存并下一张\n\nB：仍能指出具体像素证据。\nC：主要依靠布局或常识推断。",
+        "en_US": "Space + drag / middle drag  Pan\nWheel / pinch                Zoom\nF                            Fit image\n1 / 2 / 4 / 8                100% / 200% / 400% / 800%\n`                            Clean RGB\nR                            Review view\nV / P / X                    Select / Draw / Evidence\nA/B/C/D/E/U                  Evidence class\nN / Shift+N                  Next / previous unreviewed span\n← / →                        Last / next image\nCtrl/Cmd+Z                   Undo\nCtrl/Cmd+Shift+Z             Redo\nDelete                       Delete selection\nCtrl/Cmd+S                   Save\nCtrl/Cmd+Enter               Save & next\n\nB: specific supporting pixels remain visible.\nC: mainly inferred from layout or context.",
+    },
+    "onboarding_title": {"zh_CN": "每张图按这 4 步做", "en_US": "Four steps for every image"},
+    "onboarding_body": {
+        "zh_CN": "1. 先看纯净 RGB，检查完整画面。\n2. 按 P 补路线，按 V 修正草稿。\n3. 按 X 拖选区间，再按 A/B/C/D/E/U。\n4. 对照检查，确认已审核，保存并下一张。",
+        "en_US": "1. Inspect the full Clean RGB image.\n2. Press P to add paths or V to correct drafts.\n3. Press X, drag a span, then press A/B/C/D/E/U.\n4. Compare, mark reviewed, save, and continue.",
+    },
+}
+
+
+def normalize_language(language: str | None) -> str:
+    if not language:
+        return DEFAULT_LANGUAGE
+    value = language.replace("-", "_").lower()
+    return "zh_CN" if value.startswith("zh") else "en_US" if value.startswith("en") else DEFAULT_LANGUAGE
+
+
+def text(language: str, key: str, **values) -> str:
+    language = normalize_language(language)
+    entry = _TEXT.get(key)
+    if entry is None:
+        return key.format(**values) if values else key
+    template = entry.get(language) or entry["en_US"]
+    return template.format(**values) if values else template

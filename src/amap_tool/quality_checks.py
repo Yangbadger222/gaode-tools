@@ -2,6 +2,35 @@ from __future__ import annotations
 import math
 from .geometry import segments_intersect
 
+
+def _point_has_imagery(point, region):
+    """Return whether a canvas point is covered by at least one captured tile."""
+    x, y = point
+    width = float(region.get('tile_width', 0))
+    height = float(region.get('tile_height', 0))
+    for tile in region.get('tiles', []):
+        left = float(tile.get('global_x', 0))
+        top = float(tile.get('global_y', 0))
+        if left <= x <= left + width and top <= y <= top + height:
+            return True
+    return False
+
+
+def _polyline_has_imagery_gap(polyline, region, sample_step=8):
+    """Detect paths that enter canvas areas where no PNG tile was captured."""
+    for start, end in zip(polyline, polyline[1:]):
+        length = math.hypot(end[0] - start[0], end[1] - start[1])
+        samples = max(1, math.ceil(length / sample_step))
+        for index in range(samples + 1):
+            fraction = index / samples
+            point = (
+                start[0] + (end[0] - start[0]) * fraction,
+                start[1] + (end[1] - start[1]) * fraction,
+            )
+            if not _point_has_imagery(point, region):
+                return True
+    return False
+
 def check(data, region=None, near=20, short=10):
     warnings=[]; raw_nodes=data.get('nodes',[]); nodes={n.get('id'):n for n in raw_nodes}; edges=data.get('edges',[]); ignores=data.get('ignore_regions',[])
     for kind, objs in [('node',raw_nodes),('edge',edges),('ignore',ignores)]:
@@ -27,6 +56,8 @@ def check(data, region=None, near=20, short=10):
             if nid in nodes and math.hypot(nodes[nid].get('x',0)-point[0],nodes[nid].get('y',0)-point[1])>1e-3: warnings.append(f'Endpoint/polyline mismatch: {e.get("id","")} {nid}')
         for point in poly:
             if not all(math.isfinite(float(v)) for v in point): warnings.append(f'Invalid coordinate: {e.get("id","")}')
+        if region and region.get('tiles') and _polyline_has_imagery_gap(poly, region):
+            warnings.append(f'Edge leaves captured imagery: {e.get("id","")}')
     canvas_w=canvas_h=None
     if region:
         tiles=region.get('tiles',[])
@@ -56,4 +87,5 @@ def check(data, region=None, near=20, short=10):
             near_boundary=min(x,y,canvas_w-x,canvas_h-y)<=margin
             if typ=='endpoint' and near_boundary: warnings.append(f'Endpoint near region boundary; consider boundary type: {n.get("id")}')
             if typ=='boundary' and not near_boundary: warnings.append(f'Boundary node far from region boundary: {n.get("id")}')
+            if not _point_has_imagery((x, y), region): warnings.append(f'Node lies outside captured imagery: {n.get("id")}')
     return warnings

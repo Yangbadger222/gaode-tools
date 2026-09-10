@@ -1,13 +1,37 @@
+<div align="center">
+
 # 高德卫星地图采集与路径标注工具
+
+**面向研究团队的卫星影像采集、路径标注与模型验证工作流**
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Platforms](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-555555)
+![Map](https://img.shields.io/badge/Map-AMap%20Satellite-1677FF)
+![Image](https://img.shields.io/badge/Image-1024%C3%971024-2E8B57)
+![Annotation](https://img.shields.io/badge/Annotation-Path%20Polyline-E46C47)
+
+[快速开始](#最短使用流程) · [安装](#2-安装) · [地图采集](#5-正式地图采集规范) · [开始标注](#10-启动标注器) · [标注规范](#12-到底标什么) · [导出验证](#25-导出给模型做验证) · [常见问题](#28-常见问题)
+
+</div>
+
+---
 
 这是一个给研究团队使用的小型工具，用来完成两件事：
 
 1. 按统一规格批量采集校园、园区或公园的高德卫星图；
-2. 在连续地图上人工绘制机器人可通行的完整路径网络。
+2. 在普通 RGB 图或连续地图上人工绘制机器人可通行的完整 Path Polyline，并审核每一段路线的视觉依据。
 
-它不是道路分割工具，也不会自动判断哪里能走。我们保存的核心真值是人工确认的 **Polyline Graph**：节点、路径折线、路径属性和无法判断的区域。后续的 mask、centerline、junction map 或路径规划数据，都应该从这份图结构自动生成，而不是让标注员重复维护多份 GT。
+它不是道路分割工具，也不会自动判断哪里能走。V2 保存的核心真值是人工确认的 **Path Polyline**；path type 和局部 evidence 是两个独立维度。旧版 Region Graph JSON 仍能打开，但会安全地另存为 schema v2，不会覆盖旧文件。后续的 mask、centerline 或路径规划输入应从这份标注自动生成，不要让标注员重复维护多份 GT。
 
 > 当前正式数据规格：高德 Satellite、Zoom 19、1024×1024、15% overlap。
+
+## 界面预览
+
+| 中文逐图指导 | English interface |
+|---|---|
+| ![中文逐图指导](docs/ui_v2/06_image_guide_zh.png) | ![English interface](docs/ui_v2/07_english.png) |
+
+标注器支持中英文即时切换、Mac 触控板与鼠标缩放/平移、逐图操作指导、Clean RGB、Evidence 审核和保存后自动进入下一张。
 
 ## 最短使用流程
 
@@ -35,13 +59,22 @@
 人工标注：
 
 ```text
-launch_annotator.py 打开 region.json
-→ 先画主路，再补人行路和窄路
-→ 处理路口、遮挡和 Ignore Region
-→ Run Checks
-→ Save
-→ 关闭后重新打开，确认数据没有丢失
+launch_annotator.py
+→ Open Folder
+→ P 画路线 / V 编辑
+→ X 进入 Evidence，拖选局部路线后按 A/B/C/D/E/U
+→ Cmd/Ctrl + Enter 保存并切到下一张
 ```
+
+最简单的启动命令不需要任何参数：
+
+```bash
+python scripts/launch_annotator.py
+```
+
+启动后点 **Open Folder**，选择普通图片文件夹即可。程序会自动扫描 PNG、JPEG、TIFF 和 WebP，识别已有同名 JSON，并打开第一张未审核图片；只有图片也能直接开始标，第一次保存时才建立 `annotations_v2/`。详细说明见 [docs/ANNOTATION_TOOL_V2.md](docs/ANNOTATION_TOOL_V2.md)。
+
+标注器默认显示中文。顶部 **语言** 菜单可即时切换为 English，并会记住选择。主要按钮悬停满 3 秒会显示用途说明；右侧 **逐图指导** 会根据当前图片状态告诉你下一步。团队统一规则见 [每张图片的中英文标注指导](docs/ANNOTATION_GUIDE_BILINGUAL.md)。
 
 ## 1. 环境要求
 
@@ -86,6 +119,22 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 项目不会自动修改 Execution Policy。也可以运行 `.\scripts\setup_windows.ps1`。Windows 代码兼容已经完成，但仍需真机验收，步骤见 [WINDOWS_TEST_CHECKLIST.md](WINDOWS_TEST_CHECKLIST.md)。
+
+安装完成后，Windows 可以直接双击：
+
+```text
+scripts\run_annotator_windows.cmd
+```
+
+或在 PowerShell 中运行：
+
+```powershell
+.\scripts\run_annotator.ps1
+.\scripts\run_annotator.ps1 -Folder "D:\dataset\rgb"
+.\scripts\run_annotator.ps1 -Language en
+```
+
+脚本会从自己的位置找到项目根目录，因此不要求 PowerShell 当前正好位于仓库目录。若虚拟环境不存在，它会明确提示先运行 `setup_windows.ps1`。
 
 ## 3. 配置高德 API Key
 
@@ -275,53 +324,80 @@ outputs/campus_001/
 
 ## 10. 启动标注器
 
-macOS：
+推荐方式（macOS / Windows 都一样）：
+
+```bash
+python scripts/launch_annotator.py
+```
+
+也可以从终端直接打开某个普通文件夹：
+
+```bash
+python scripts/launch_annotator.py --folder /path/to/dataset
+```
+
+界面支持下面几种常见目录，不要求 manifest 或 config：
+
+```text
+dataset/img001.png
+dataset/img001.png + dataset/img001.json
+dataset/rgb/img001.png + dataset/annotations/img001.json
+dataset/tiger_hill/... + dataset/tongli/...
+```
+
+原图始终只读。只有图片时保存到 `dataset/annotations_v2/`；读取旧 schema 1.x 时也写到 `annotations_v2/`，原 JSON 不覆盖；schema v2 才会原位原子保存并保留 `.bak`。
+
+旧 Region 工作流仍可使用：
 
 ```bash
 python scripts/launch_annotator.py --region outputs/campus_001/region.json
 ```
 
-Windows：
+使用团队已分配的标注工作区时，用下面的命令启动。窗口会显示例如 `区域 1/4（共 76 张图）`：前一个数字是分配的连续区域数，括号内才是该标注员真正需要看的 PNG 图块总数。它提供清晰的 **上一张**、**下一张** 按钮；切换时会自动保存当前标注。
 
-```powershell
-python scripts\launch_annotator.py --region outputs\campus_001\region.json
+```bash
+python scripts/launch_annotation_queue.py \
+  --workspace outputs/suzhou_rgb_satellite_dataset_300/annotation_workspace \
+  --scheme 4_people \
+  --annotator D
 ```
 
-标注默认保存为 `annotations/campus_001.json`。人工只维护这一份 Complete Polyline Graph，不要再手工维护 visible mask、centerline 或 junction mask。
+要从某个指定区域开始，把 `--region tiger_hill` 加在命令末尾。这个队列只包含该标注员被分配的区域，不会跳到其他人的文件。
 
 ## 11. 标注器怎么用
 
+界面可在 **语言 / Language** 菜单中切换中英文。右侧 **逐图指导 / Image Guide** 是每张图的工作清单：先看纯净 RGB，再补路线和修 geometry，随后审核 Evidence，完成后保存并进入下一张。详细逐图规则见 [docs/ANNOTATION_GUIDE_BILINGUAL.md](docs/ANNOTATION_GUIDE_BILINGUAL.md)。
+
 | 操作 | 方法 |
 |---|---|
-| 选择模式 | `Esc` 或 Select |
-| 画路径 | `D` 或 Draw Path |
+| 打开图片文件夹 | Open Folder 或 `Cmd/Ctrl + O` |
+| 选择 / 编辑 | `V` 或 Select；拖控制点可修改 |
+| 画路径 | `P` 或 Draw Path |
 | 加控制点 | 左键逐点点击 |
-| 完成路径 | 双击，或点击 Finish Path |
-| 缩放 | 鼠标滚轮/触控板滚动 |
-| 平移 | 在画布上拖动 |
-| 选择路径或节点 | Select 模式下点击 |
-| 插入控制点 | 选中 edge 后 Option/Alt + 左键 |
-| 删除对象 | Delete；macOS 也可尝试 Backspace |
-| 切分路径 | 选 edge，按 `S`，再点切分位置 |
-| 合并节点 | 选 node A，按 `M`，再点 node B |
-| Ignore Region | 按 `I`，逐点画 polygon，双击结束 |
+| 完成路径 | 双击或 `Enter`；`Backspace` 撤回当前最后一点；`Esc` 取消 |
+| 缩放 | 鼠标滚轮；Mac 触控板双指捏合 |
+| 平移 | `Space + 拖动`、鼠标中键拖动、Mac 触控板双指滑动 |
+| 固定缩放 | `F` 适应图片；`1/2/4/8` 为 100%/200%/400%/800% |
+| Clean RGB | 反引号 `` ` ``，只显示原始 RGB，再按一次恢复 |
+| Evidence | `X`，沿路线拖出局部 span，再按 `A/B/C/D/E/U` |
+| Review View | `R`，左右同步显示 Clean RGB 和标注图 |
+| 上一张 / 下一张 | `←/→` 或明确的 Last Image / Next Image 按钮 |
+| 下一个未审核 span | Evidence/Review 中 `N`；`Shift+N` 返回上一个 |
+| 插入控制点 | 双击路线 segment，或右键 Insert Point Here |
+| 精细移动点 | 方向键 1 native px；`Shift + 方向键` 5 px |
+| 删除对象 | `Delete` / `Backspace` |
 | 保存 | Cmd/Ctrl + S |
+| 保存并下一张 | Cmd/Ctrl + Enter |
 | 撤销 | Cmd/Ctrl + Z |
 | 重做 | Cmd/Ctrl + Shift + Z |
-| 查看说明 | Help |
+| 隐藏左右面板 | `Tab` / `Shift+Tab` |
+| 查看快捷键 | `?` |
 
-重要：点完路线后必须双击或点 **Finish Path**。没有完成就切换模式时，临时草稿会取消；已经完成的路线不会清除。
+把鼠标停在顶部主要按钮或逐图指导按钮上满 3 秒，会出现一段不依赖专业术语的用途说明；鼠标移开、点击按钮或窗口隐藏时提示会立即关闭。
 
-选中 edge 后还可以用快捷键：
+Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misaligned`、`E Task Mismatch`、`U Unsure`。最关键的判断是：B 还能指出具体像素证据；C 主要依靠布局或常识推断。旧路线绝不会自动标成 A。
 
-```text
-1 vehicle_road       V visible
-2 pedestrian_path    P partially_occluded
-3 narrow_path        O fully_occluded
-4 service_path
-```
-
-右侧 Properties 面板还可以修改 confidence 和 verification source。
+程序每次操作后约 0.9 秒自动保存；状态栏显示 Saved 或 Save Failed。Folder 设置可开启 **Read Only / Sealed**，此时只能查看，不能修改、保存或批量覆盖。schema 细节见 [docs/ANNOTATION_SCHEMA_V2.md](docs/ANNOTATION_SCHEMA_V2.md)。
 
 ## 12. 到底标什么
 
@@ -340,17 +416,20 @@ python scripts\launch_annotator.py --region outputs\campus_001\region.json
 
 一句话：标的是**固定路径网络**，不是“所有可能走得过去的地方”。
 
-## 13. 路径统一画中心线
+## 13. 路径画在机器人实际可走的位置
 
-无论路多宽，都只画中心线，不画左右边界：
+不要画道路边界，也不要为了“居中”把路线压在双向道路的中间分隔线。路线应落在机器人实际可以持续通行的位置：
 
 ```text
-|                    |
-|        -----       |
-|                    |
+人行道或单通道：沿可通行带的中心画一条路径
+
+双向车行道：分别沿两个方向各自的可行驶带画路径
+             不沿中央绿化带、隔离栏、黄线或车道分界线画
 ```
 
-弯路不能只点起点和终点拉直线，应沿真实中心线加入足够的控制点。控制点够表达形状即可，不要每几像素点一个点。
+有实体中央隔离、绿化带、护栏或明显禁止横穿时，两侧必须是两条独立路线，只在真实可通行的路口或斑马线连接。没有物理隔离的窄双向道路，可以用一条沿可通行带中心的路径。弯路不能只点起点和终点拉直线，应沿实际可行驶位置加入足够的控制点；控制点够表达形状即可，不要每几像素点一个点。
+
+清晰可见、长期存在的人行道、公园园路、建筑间铺装小路和服务通道都要补进来，不能因为 OSM 草稿没有就漏掉。反过来，树冠或阴影下无法确认的路，不要凭想象续画，应该用 `Ignore` 标出来。
 
 ## 14. Path Type
 
@@ -452,6 +531,7 @@ Warnings 只提示，不会自动修改 GT。
 - `Fully occluded without evidence`：重新确认 verification source。
 - `Endpoint near region boundary`：靠近边缘的 endpoint 是否应改为 boundary；`Boundary node far from region boundary` 则表示 boundary 离四条边都较远。
 - `Short edge`：检查是否为误点产生的碎 edge。
+- `Edge leaves captured imagery` / `Node lies outside captured imagery`：路线进入了水面过滤或采集失败造成的空白区，删除或裁回实际 PNG 范围；不要在空白处猜测路径。
 
 ## 23. 保存和数据安全
 
@@ -469,7 +549,35 @@ Campus D     → Validation
 Campus E/F   → Test
 ```
 
-## 25. 单点和 Zoom 对比
+## 25. 导出给模型做验证
+
+标注器里的红线只是显示效果。交给模型时，应使用逐图 RGB、逐图像素坐标标签和叠加核对图。下面命令会导出某位标注员负责的全部 Region：
+
+```bash
+python scripts/export_model_validation.py \
+  --workspace outputs/suzhou_rgb_satellite_dataset_300/annotation_workspace \
+  --scheme 4_people --annotator D
+```
+
+默认输出到：
+
+```text
+outputs/suzhou_rgb_satellite_dataset_300/annotation_workspace/model_validation/4_people/D/
+  rgb/       # 给模型的原始 1024x1024 PNG
+  labels/    # 同名 JSON，路线坐标是当前图片内的像素坐标
+  overlays/  # 给人检查的叠加路线图，不是模型输入
+  manifest.csv
+  manifest.jsonl
+  package.json
+  README.md
+```
+
+默认 `rgb/` 会以硬链接方式建立，不重复占用磁盘空间；若需要把整个验证包复制到另一台机器，重新运行时加 `--rgb-mode copy`。
+重复导出同一目录时加 `--overwrite`；它只替换该验证包目录，不会修改原始图或标注 JSON。
+
+`annotation_status=draft` 代表该标签仍是 OSM 初始草稿，只能用于模型接口、推理流程和可视化验证，不能当作最终人工真值或模型精度结论。完成 RGB 人工复核后再导出，状态会自动变为 `human_reviewed`。
+
+## 26. 单点和 Zoom 对比
 
 以下工具只用于调试和尺度验证，正式数据以 Region 为主。
 
@@ -485,7 +593,7 @@ python scripts/batch_capture.py \
 
 批量位置配置见 `config/sample_locations.yaml`。
 
-## 26. 测试与项目状态
+## 27. 测试与项目状态
 
 ```bash
 pytest -q
@@ -493,7 +601,7 @@ pytest -q
 
 当前 macOS 基线：Python 3.12.13、PySide6 6.11.2、pytest 全部通过。Collector 已完成 11×10、共 110 张 tile 的真实采集和 Ctrl+C 断点续传验证。
 
-## 27. 常见问题
+## 28. 常见问题
 
 ### 路线切换模式后消失
 
@@ -519,13 +627,13 @@ pytest -q
 python -m pip install --force-reinstall --no-cache-dir PySide6==6.11.2
 ```
 
-## 28. 团队交付检查表
+## 29. 团队交付检查表
 
 - [ ] 使用 Satellite / Z19 / 1024×1024 / 15% overlap；
 - [ ] `check_region.py` 全部 PASS；
 - [ ] preview 人工检查正常；
 - [ ] 没有黑块、旧 tile、错位或漏图；
-- [ ] 所有路径按中心线绘制；
+- [ ] 路线都在实际可行驶位置；双向机动车道没有沿中央分隔线绘制；
 - [ ] 真实路口共享 junction；
 - [ ] 出 Region 的道路使用 boundary；
 - [ ] 树冠遮挡没有误标 endpoint；
@@ -536,7 +644,7 @@ python -m pip install --force-reinstall --no-cache-dir PySide6==6.11.2
 - [ ] Save 后关闭并重新打开验证；
 - [ ] `.env` 和 API Key 没有进入交付文件或 Git。
 
-## 29. 项目边界
+## 30. 项目边界
 
 本仓库只负责卫星图采集、Region 网格和 metadata、人工 Complete Navigation Path Graph 标注，以及基础检查和统计。
 
