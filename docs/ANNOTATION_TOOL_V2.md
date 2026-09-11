@@ -10,6 +10,19 @@
 
 ## 1. 启动
 
+### 推荐：双击启动
+
+不需要先激活虚拟环境：
+
+- macOS：双击项目根目录的 `AMap Path Annotator.app`；
+- Windows：双击 `scripts\run_annotator_easy.vbs`。
+
+第一次启动会自动创建 `.venv` 并安装 `requirements.txt`，之后直接双击即可。电脑需要安装 Python 3.12。macOS 若第一次提示无法验证开发者，请右键应用并选择“打开”确认一次。
+
+启动后点击 **Open Folder**，选择普通图片文件夹；重新整理的 4 人数据分别位于 `A/rgb`、`B/rgb`、`C/rgb`、`D/rgb`。
+
+### 备用：命令行启动
+
 在项目目录激活虚拟环境后运行：
 
 ```bash

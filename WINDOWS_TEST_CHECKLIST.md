@@ -11,7 +11,7 @@
 9. Interrupt once with Ctrl+C and rerun with `--resume`.
 10. Run `check_region.py` and require 0 missing/invalid/wrong-size tiles and fixed overlap PASS.
 11. Run `make_preview.py` and inspect both previews.
-12. Double-click `scripts\run_annotator_windows.cmd`, then also test `powershell -File scripts\run_annotator.ps1`.
+12. Double-click `scripts\run_annotator_easy.vbs` (no console window); then also test `scripts\run_annotator_windows.cmd` and `powershell -File scripts\run_annotator.ps1`.
 13. Switch between 中文 and English; close and reopen to verify the choice is remembered.
 14. Hover over Draw for 3 seconds and verify the delayed explanation appears, then disappears after moving away.
 15. Copy a macOS region to Windows and open it with `python scripts\launch_annotator.py --region ...`.

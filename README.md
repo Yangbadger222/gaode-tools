@@ -35,15 +35,27 @@
 
 ## 最短使用流程
 
-第一次使用：
+### 最省事的启动方式（推荐）
+
+不需要打开终端，也不需要手动激活虚拟环境：
+
+- **macOS**：双击项目里的 `AMap Path Annotator.app`；
+- **Windows**：双击 `scripts\run_annotator_easy.vbs`。
+
+第一次打开时，启动器会自动创建项目环境并安装依赖。以后继续双击即可。电脑需要预先安装 **Python 3.12**；如果系统没有 Python，启动器会弹窗说明。启动后点击 **打开文件夹 / Open Folder**，选择要标注的 `A/rgb`、`B/rgb`、`C/rgb` 或 `D/rgb` 文件夹。
+
+如果 macOS 第一次拦截未签名应用，请右键应用选择 **打开**，确认一次即可。启动器不会修改系统 Python，也不会要求你手动执行 `source .venv/bin/activate`。
+
+普通标注员第一次使用：
 
 ```text
 安装 Python 3.12
-→ 创建虚拟环境
-→ 安装依赖
-→ 在 .env 填写高德 JS API Key
-→ 运行环境诊断
+→ 双击 AMap Path Annotator.app（macOS）或 run_annotator_easy.vbs（Windows）
+→ 等待首次自动准备环境
+→ 点 Open Folder 选择图片文件夹
 ```
+
+地图采集或需要手动维护开发环境时，再按下面的命令行安装说明操作。
 
 采一个区域：
 
@@ -90,6 +102,8 @@ python scripts/launch_annotator.py
 
 ### macOS
 
+已经下载并安装 Python 3.12 的同事，直接双击项目根目录的 **AMap Path Annotator.app** 即可。下面的命令行安装方式只适合需要自己维护开发环境的人。
+
 ```bash
 git clone https://github.com/Yangbadger222/gaode-tools.git
 cd gaode-tools
@@ -100,6 +114,8 @@ pip install -r requirements-dev.txt
 ```
 
 ### Windows PowerShell
+
+日常标注不需要打开 PowerShell，直接双击 `scripts\run_annotator_easy.vbs` 即可。下面的 PowerShell 步骤是手动安装或排查问题时使用的备用方式。
 
 先安装 Python 3.12 x64，然后执行：
 
@@ -125,6 +141,8 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```text
 scripts\run_annotator_windows.cmd
 ```
+
+`run_annotator_easy.vbs` 是更省事的入口：它会自动准备 `.venv` 和依赖，并隐藏命令行窗口。`run_annotator_windows.cmd` 保留给需要看到启动日志的排查场景。
 
 或在 PowerShell 中运行：
 
