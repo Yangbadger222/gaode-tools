@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QGraphicsRectItem
+from PySide6.QtWidgets import QApplication, QGraphicsPathItem, QGraphicsRectItem
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
@@ -265,6 +265,50 @@ def test_image_guide_tracks_annotation_progress(tmp_path):
     assert "第 3 步" in window.guide_title.text()
     assert window.save()
     assert window.guide_title.text() == "本图已完成"
+    window.close()
+
+
+def test_evidence_two_clicks_select_a_continuous_range(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    Image.new("RGB", (1000, 200), "green").save(tmp_path / "a.png")
+    window = AnnotatorWindow(state_store=AppStateStore(tmp_path / "state.json"))
+    window.open_folder(tmp_path)
+    edge_id = window.m.add_segment([[50, 100], [950, 100]])
+    window.changed(model_already_changed=True)
+    window.set_mode("EVIDENCE")
+
+    window.evidence_press(QPointF(150, 100))
+    window.evidence_release(QPointF(150, 100))
+    assert window.evidence_selection is None
+    assert window.evidence_click_anchor == (edge_id, 100.0)
+    window.evidence_press(QPointF(850, 100))
+    window.evidence_release(QPointF(850, 100))
+
+    assert window.evidence_selection == (edge_id, 100.0, 800.0)
+    window.assign_selected_evidence("A")
+    assert [
+        (span["start_s"], span["end_s"], span["evidence"])
+        for span in window.m.segment(edge_id)["evidence_spans"]
+    ] == [(100.0, 800.0, "clear_visual")]
+    window.close()
+
+
+def test_evidence_view_distinguishes_unreviewed_and_labeled_colors(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    Image.new("RGB", (400, 200), "green").save(tmp_path / "a.png")
+    window = AnnotatorWindow(state_store=AppStateStore(tmp_path / "state.json"))
+    window.open_folder(tmp_path)
+    edge_id = window.m.add_segment([[20, 100], [380, 100]])
+    window.changed(model_already_changed=True)
+    window.set_mode("EVIDENCE")
+
+    paths = [item for item in window.view.scene().items() if isinstance(item, QGraphicsPathItem)]
+    assert any(item.pen().color().name() == "#f0b44d" and item.pen().style().name == "DashLine" for item in paths)
+
+    window.evidence_selection = (edge_id, 0.0, 360.0)
+    window.assign_selected_evidence("A")
+    paths = [item for item in window.view.scene().items() if isinstance(item, QGraphicsPathItem)]
+    assert any(item.pen().color().name() == "#5f8f68" for item in paths)
     window.close()
 
 

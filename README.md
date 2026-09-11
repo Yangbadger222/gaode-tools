@@ -397,7 +397,7 @@ python scripts/launch_annotation_queue.py \
 | 平移 | `Space + 拖动`、鼠标中键拖动、Mac 触控板双指滑动 |
 | 固定缩放 | `F` 适应图片；`1/2/4/8` 为 100%/200%/400%/800% |
 | Clean RGB | 反引号 `` ` ``，只显示原始 RGB，再按一次恢复 |
-| Evidence | `X`，沿路线拖出局部 span，再按 `A/B/C/D/E/U` |
+| Evidence | `X`，可沿路线拖选，或先点起点再点终点选择范围，然后按 `A/B/C/D/E/U` |
 | Review View | `R`，左右同步显示 Clean RGB 和标注图 |
 | 上一张 / 下一张 | `←/→` 或明确的 Last Image / Next Image 按钮 |
 | 下一个未审核 span | Evidence/Review 中 `N`；`Shift+N` 返回上一个 |
@@ -414,6 +414,8 @@ python scripts/launch_annotation_queue.py \
 把鼠标停在顶部主要按钮或逐图指导按钮上满 3 秒，会出现一段不依赖专业术语的用途说明；鼠标移开、点击按钮或窗口隐藏时提示会立即关闭。
 
 Evidence 六类：`A Clear`、`B Weak Visual`、`C Context Only`、`D Draft Misaligned`、`E Task Mismatch`、`U Unsure`。最关键的判断是：B 仍必须能指出具体 RGB 像素证据；C 主要依靠布局或常识推断。低分辨率不自动等于 B。旧路线绝不会自动标成 A。
+
+审核时的颜色提示：琥珀色虚线表示未审核；绿色 / 橙色 / 紫色 / 红色 / 灰色 / 蓝灰色分别对应 A / B / C / D / E / U。右侧“审核”面板也会显示同一份颜色图例。单击只设置起点，不会自动生成一小段。
 
 局部 E 只排除选中的路线区间，不会排除整条 polyline。只有明确使用右键或属性中的 **排除整条路径 / Exclude Entire Path** 才会进入 `excluded_edges`；整条路径会显示为灰色，并可恢复、撤销和重做。历史上同时存在局部 E 与整路标志的旧数据会被报告为歧义，不会静默猜测。
 

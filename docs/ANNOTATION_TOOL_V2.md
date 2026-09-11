@@ -75,8 +75,8 @@ Path Type 与 Evidence 是两回事。`pedestrian_path`、`vehicle_road`、`narr
 ## 5. Evidence Span
 
 1. 按 `X` 进入 Evidence。
-2. 在一条路线按下鼠标，沿路线拖动到 span 终点，再松开。
-3. 被选区间会加粗；直接按 `A/B/C/D/E/U`，不弹对话框。
+2. 选择区间有两种方式：按住鼠标沿同一路线拖动；或先点起点、再点同一路线上的终点（更适合触控板）。
+3. 被选区间会加粗；直接按 `A/B/C/D/E/U`，不弹对话框。单击只会设置起点，不会偷偷生成一小段。
 4. `N` 跳到下一个未审核区间，`Shift+N` 返回；Auto-advance 默认开启。
 5. Evidence 用沿 polyline 的弧长 `start_s/end_s` 保存，不要求人工把整条线反复 Split。
 

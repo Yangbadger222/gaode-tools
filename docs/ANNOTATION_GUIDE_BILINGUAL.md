@@ -30,7 +30,7 @@ This checklist is for annotators and reviewers. The **逐图指导 / Image Guide
 
 ### 第 3 步：逐段审核 Evidence
 
-按 `X`，沿路线拖选一个区间，再按对应字母：
+按 `X`，有两种方式选区间：按住沿路线拖动，或先点起点、再点同一路线上的终点，然后按对应字母。单击只设置起点，不会自动生成一小段：
 
 | 键 | 类别 | 什么时候用 |
 |---|---|---|
@@ -44,6 +44,8 @@ This checklist is for annotators and reviewers. The **逐图指导 / Image Guide
 最重要的区分：**B = Weak Visual 仍必须能指出具体 RGB 视觉证据。** 如果主要依赖布局或生活常识判断路径存在，应标 C = Context Only。低分辨率不自动等于 B；图太糊而只能猜测时，应标 C。
 
 Evidence mode 中的 **E 是局部 Task Mismatch**：局部 E 只排除选中区间；只有右键或属性中的 **排除整条路径 / Exclude Entire Path** 才排除整个 polyline。整路排除后路线会变成灰色，仍可使用 **恢复整条路径 / Restore Entire Path**，并支持撤销/重做。
+
+颜色提示：琥珀色虚线 = 未审核；绿色 = A 清晰可见；橙色 = B 弱视觉证据；紫色 = C 仅语境推断；红色 = D 草稿错位；灰色 = E 任务外；蓝灰色 = U 不确定。
 
 若 B 的证据较弱，可在属性面板选择 `tree_canopy`、`shadow`、`low_contrast`、`low_resolution`、`narrow_structure`、`building_occlusion`、`mixed` 或 `other`。该字段可留空；把 B 改成其他类别时会自动清除。
 
@@ -88,7 +90,7 @@ Click to add points, double-click or press `Enter` to finish, press `Backspace` 
 
 ### Step 3: review evidence span by span
 
-Press `X`, drag along a route, and then press a class key:
+Press `X`. Select a span by dragging along one route, or click its start and then its end (the latter is easier on a trackpad), then press a class key. A single click only sets the start; it does not create a tiny automatic span:
 
 | Key | Class | Use when |
 |---|---|---|
@@ -102,6 +104,8 @@ Press `X`, drag along a route, and then press a class key:
 The key distinction is: **Weak Visual requires identifiable supporting evidence in the RGB image.** If the path is inferred mainly from layout or common sense rather than visible pixels, mark Context Only. Low resolution alone is not automatically B; if you can only guess, use C.
 
 In Evidence mode, **E is a local Task Mismatch span**: it excludes only the selected interval. Excluding the entire polyline requires the explicit **Exclude Entire Path** action in the context menu or inspector. The whole path becomes muted grey and can be restored with **Restore Entire Path**; both actions support undo/redo.
+
+Color key: amber dashed = unreviewed; green = A Clear Visual; orange = B Weak Visual; purple = C Context Only; red = D Draft Misaligned; grey = E Task Mismatch; blue-grey = U Unsure.
 
 For B, the inspector optionally records `visibility_issue`: `tree_canopy`, `shadow`, `low_contrast`, `low_resolution`, `narrow_structure`, `building_occlusion`, `mixed`, or `other`. Leaving it unspecified is valid. Repainting B as another class clears the field.
 

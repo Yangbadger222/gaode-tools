@@ -192,7 +192,10 @@ _TEXT: dict[str, dict[str, str]] = {
     "help_select": {"zh_CN": "选择路线或控制点。拖动控制点可精确修正路线。快捷键 V。", "en_US": "Select a path or control point. Drag points to correct geometry. Shortcut: V."},
     "help_draw": {"zh_CN": "逐点画稳定可导航通道的标准中心线；双击或 Enter 完成。不要画某次轨迹、道路边界或中央隔离带。快捷键 P。", "en_US": "Draw the canonical centerline of a stable navigable corridor; double-click or Enter to finish. Avoid arbitrary trajectories, road edges, and center separators. Shortcut: P."},
     "help_edit": {"zh_CN": "编辑控制点；双击路线可以插入新点，也可右键拆分或合并路线。", "en_US": "Edit control points. Double-click a path to insert a point, or right-click to split and merge."},
-    "help_evidence": {"zh_CN": "沿路线拖选区间，再按 A/B/C/D/E/U。局部 E 只排除选中区间，不会排除整条路线。快捷键 X。", "en_US": "Drag a span, then press A/B/C/D/E/U. Local E excludes only that span, never the whole path. Shortcut: X."},
+    "help_evidence": {"zh_CN": "可按住沿路线拖选，也可先点起点、再点终点选择较长区间，然后按 A/B/C/D/E/U。局部 E 只排除选中区间，不会排除整条路线。快捷键 X。", "en_US": "Drag along a path, or click a start and then an end to select a longer span, then press A/B/C/D/E/U. Local E excludes only that span, never the whole path. Shortcut: X."},
+    "evidence_start_selected": {"zh_CN": "已选起点 — 再点同一路线上的终点（或按住拖动）", "en_US": "Start selected — click an endpoint on the same path, or drag"},
+    "evidence_end_too_close": {"zh_CN": "终点离起点太近 — 请在同一路线上点更远的位置", "en_US": "Endpoint is too close — click farther along the same path"},
+    "evidence_span_selected": {"zh_CN": "已选择区间 — 请按 A / B / C / D / E / U", "en_US": "Span selected — press A / B / C / D / E / U"},
     "help_undo": {"zh_CN": "撤销最近一次标注或几何修改。快捷键 Ctrl/Cmd+Z。", "en_US": "Undo the latest annotation or geometry edit. Shortcut: Ctrl/Cmd+Z."},
     "help_redo": {"zh_CN": "恢复刚刚撤销的操作。快捷键 Ctrl/Cmd+Shift+Z。", "en_US": "Restore the last undone action. Shortcut: Ctrl/Cmd+Shift+Z."},
     "help_clean": {"zh_CN": "临时隐藏路线、Evidence 和控制点，只检查原始 RGB。不会修改图片或标注。快捷键 `。", "en_US": "Temporarily hide paths, evidence, and control points to inspect untouched RGB. Nothing is modified. Shortcut: `."},
@@ -211,13 +214,13 @@ _TEXT: dict[str, dict[str, str]] = {
     "help_guide_save_next": {"zh_CN": "安全保存当前标注，然后切换到下一张图片。", "en_US": "Safely save this annotation and continue to the next image."},
     "tooltip_title": {"zh_CN": "这个按钮做什么？", "en_US": "What does this do?"},
     "shortcuts_body": {
-        "zh_CN": "Space + 拖动 / 中键拖动　平移\n滚轮 / 触控板捏合　　　 缩放\nF　　　　　　　　　　 适应图片\n1 / 2 / 4 / 8　　　　　100% / 200% / 400% / 800%\n`　　　　　　　　　　 纯净 RGB\nR　　　　　　　　　　 对照审核\nV / P / X　　　　　　 选择 / 画路线 / Evidence\nA/B/C/D/E/U　　　　　 Evidence 分类\nN / Shift+N　　　　　 下一个 / 上一个未审核区间\n← / →　　　　　　　　上一张 / 下一张\nCtrl/Cmd+Z　　　　　　撤销\nCtrl/Cmd+Shift+Z　　　 重做\nDelete　　　　　　　　删除所选\nCtrl/Cmd+S　　　　　　保存\nCtrl/Cmd+Enter　　　　 保存并下一张\n\nB：仍能指出具体像素证据。\nC：主要依靠布局或常识推断。",
-        "en_US": "Space + drag / middle drag  Pan\nWheel / pinch                Zoom\nF                            Fit image\n1 / 2 / 4 / 8                100% / 200% / 400% / 800%\n`                            Clean RGB\nR                            Review view\nV / P / X                    Select / Draw / Evidence\nA/B/C/D/E/U                  Evidence class\nN / Shift+N                  Next / previous unreviewed span\n← / →                        Last / next image\nCtrl/Cmd+Z                   Undo\nCtrl/Cmd+Shift+Z             Redo\nDelete                       Delete selection\nCtrl/Cmd+S                   Save\nCtrl/Cmd+Enter               Save & next\n\nB: specific supporting pixels remain visible.\nC: mainly inferred from layout or context.",
+        "zh_CN": "Space + 拖动 / 中键拖动　平移\n滚轮 / 触控板捏合　　　 缩放\nF　　　　　　　　　　 适应图片\n1 / 2 / 4 / 8　　　　　100% / 200% / 400% / 800%\n`　　　　　　　　　　 纯净 RGB\nR　　　　　　　　　　 对照审核\nV / P / X　　　　　　 选择 / 画路线 / Evidence\nA/B/C/D/E/U　　　　　 Evidence 分类\nN / Shift+N　　　　　 下一个 / 上一个未审核区间\n← / →　　　　　　　　上一张 / 下一张\nCtrl/Cmd+Z　　　　　　撤销\nCtrl/Cmd+Shift+Z　　　 重做\nDelete　　　　　　　　删除所选\nCtrl/Cmd+S　　　　　　保存\nCtrl/Cmd+Enter　　　　 保存并下一张\n\nEvidence 既可沿路线拖选，也可点起点再点终点。\nB：仍能指出具体像素证据。\nC：主要依靠布局或常识推断。",
+        "en_US": "Space + drag / middle drag  Pan\nWheel / pinch                Zoom\nF                            Fit image\n1 / 2 / 4 / 8                100% / 200% / 400% / 800%\n`                            Clean RGB\nR                            Review view\nV / P / X                    Select / Draw / Evidence\nA/B/C/D/E/U                  Evidence class\nN / Shift+N                  Next / previous unreviewed span\n← / →                        Last / next image\nCtrl/Cmd+Z                   Undo\nCtrl/Cmd+Shift+Z             Redo\nDelete                       Delete selection\nCtrl/Cmd+S                   Save\nCtrl/Cmd+Enter               Save & next\n\nEvidence can be dragged, or selected with a start click and an end click.\nB: specific supporting pixels remain visible.\nC: mainly inferred from layout or context.",
     },
     "onboarding_title": {"zh_CN": "每张图按这 4 步做", "en_US": "Four steps for every image"},
     "onboarding_body": {
-        "zh_CN": "1. 先看纯净 RGB，检查完整画面。\n2. 按 P 补路线，按 V 修正草稿。\n3. 按 X 拖选区间，再按 A/B/C/D/E/U。\n4. 对照检查，确认已审核，保存并下一张。",
-        "en_US": "1. Inspect the full Clean RGB image.\n2. Press P to add paths or V to correct drafts.\n3. Press X, drag a span, then press A/B/C/D/E/U.\n4. Compare, mark reviewed, save, and continue.",
+        "zh_CN": "1. 先看纯净 RGB，检查完整画面。\n2. 按 P 补路线，按 V 修正草稿。\n3. 按 X：可拖选，也可点起点再点终点，然后按 A/B/C/D/E/U。\n4. 对照检查，确认已审核，保存并下一张。",
+        "en_US": "1. Inspect the full Clean RGB image.\n2. Press P to add paths or V to correct drafts.\n3. Press X: drag a span, or click its start and end, then press A/B/C/D/E/U.\n4. Compare, mark reviewed, save, and continue.",
     },
 }
 

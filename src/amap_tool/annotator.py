@@ -91,6 +91,7 @@ PATH_COLORS = {
     "narrow_path": "#64866b",
     "service_path": "#547b96",
 }
+UNREVIEWED_COLOR = "#f0b44d"
 
 
 def atomic_save(data, path):
@@ -419,6 +420,8 @@ class DatasetSettingsDialog(QDialog):
 
 
 class AnnotatorWindow(QMainWindow):
+    EVIDENCE_DRAG_THRESHOLD = 1.0
+
     def __init__(
         self,
         region_file=None,
@@ -451,6 +454,9 @@ class AnnotatorWindow(QMainWindow):
         self.drag_before = None
         self.evidence_anchor = None
         self.evidence_selection = None
+        self.evidence_click_anchor = None
+        self.evidence_dragged = False
+        self.evidence_click_pair = False
         self.hover_edge_id = None
         self.merge_pending_edge = None
         self.dirty = False
@@ -616,6 +622,9 @@ class AnnotatorWindow(QMainWindow):
         self.review_hint = QLabel()
         self.review_hint.setWordWrap(True)
         self.review_hint.setObjectName("hintBox")
+        self.review_legend = QLabel()
+        self.review_legend.setWordWrap(True)
+        self.review_legend.setObjectName("legendBox")
         self.review_scope_label = QLabel()
         self.review_scope_label.setObjectName("scopeLabel")
         self.mark_full_review_button = QPushButton()
@@ -630,6 +639,7 @@ class AnnotatorWindow(QMainWindow):
         review_layout.addWidget(self.review_progress)
         review_layout.addWidget(self.review_details)
         review_layout.addWidget(self.review_hint)
+        review_layout.addWidget(self.review_legend)
         review_layout.addWidget(self.review_scope_label)
         review_layout.addWidget(self.mark_full_review_button)
         review_layout.addWidget(self.auto_advance)
@@ -929,6 +939,7 @@ class AnnotatorWindow(QMainWindow):
         for index, key in enumerate(("inspector", "review", "guide", "layers", "checks")):
             self.inspector_tabs.setTabText(index, self.t(key))
         self.review_hint.setText(self.t("review_hint"))
+        self.update_review_legend()
         self.auto_advance.setText(self.t("auto_advance"))
         self.mark_reviewed_button.setText(self.t("mark_reviewed"))
         self.mark_full_review_button.setText(self.t("mark_full_image_reviewed"))
@@ -980,6 +991,17 @@ class AnnotatorWindow(QMainWindow):
         self.update_inspector()
         self.update_image_guide()
 
+    def update_review_legend(self) -> None:
+        """Keep the audit colors visible so reviewers do not have to guess."""
+        if not hasattr(self, "review_legend"):
+            return
+        title = "颜色提示" if self.language == "zh_CN" else "Color key"
+        unreviewed = "未审核" if self.language == "zh_CN" else "Unreviewed"
+        items = [f'<span style="color:{UNREVIEWED_COLOR}">●</span> {unreviewed}']
+        for evidence, color in EVIDENCE_COLORS.items():
+            items.append(f'<span style="color:{color}">●</span> {self.evidence_label(evidence)}')
+        self.review_legend.setText(f"<b>{title}</b><br>" + " &nbsp; ".join(items))
+
     @staticmethod
     def _stylesheet() -> str:
         return """
@@ -1015,6 +1037,7 @@ class AnnotatorWindow(QMainWindow):
         #panelTitle { font-size: 15px; font-weight: 600; }
         #muted { color: #6f6d68; }
         #hintBox { color: #454943; background: #ecefe9; border: 1px solid #d0d9d0; border-radius: 7px; padding: 10px; }
+        #legendBox { color: #454943; background: #f0eee8; border: 1px solid #d9d5cc; border-radius: 7px; padding: 8px; }
         #warningBox { color: #744c2b; background: #f4e8da; border: 1px solid #dfc2a4; border-radius: 7px; padding: 8px; }
         #scopeLabel { color: #3f5d47; background: #e7eee8; border: 1px solid #c7d6c9; border-radius: 6px; padding: 6px; font-weight: 600; }
         #canvasLabel { background: #343431; color: #e4e2dc; padding: 4px 8px; }
@@ -1253,6 +1276,9 @@ class AnnotatorWindow(QMainWindow):
         self.drag = None
         self.evidence_anchor = None
         self.evidence_selection = None
+        self.evidence_click_anchor = None
+        self.evidence_dragged = False
+        self.evidence_click_pair = False
         self.hover_edge_id = None
         self.merge_pending_edge = None
         self.dirty = False
@@ -1431,6 +1457,9 @@ class AnnotatorWindow(QMainWindow):
         self.evidence_anchor = None
         if mode != "EVIDENCE":
             self.evidence_selection = None
+            self.evidence_click_anchor = None
+            self.evidence_dragged = False
+            self.evidence_click_pair = False
             self.hover_edge_id = None
         action = {
             "SELECT": self.select_action,
@@ -1574,9 +1603,15 @@ class AnnotatorWindow(QMainWindow):
     def evidence_press(self, q: QPointF) -> None:
         hit = self.nearest_segment(q.x(), q.y())
         if hit and hit[3] <= self.hit_tolerance():
-            self.evidence_anchor = (hit[0], hit[4])
-            self.evidence_selection = (hit[0], hit[4], hit[4])
-            self.sel = ("edge", hit[0])
+            edge_id, hit_s = hit[0], hit[4]
+            pending = self.evidence_click_anchor
+            self.evidence_click_pair = bool(pending and pending[0] == edge_id)
+            start_s = pending[1] if self.evidence_click_pair else hit_s
+            self.evidence_anchor = (edge_id, start_s)
+            self.evidence_selection = (edge_id, start_s, hit_s)
+            self.evidence_dragged = self.evidence_click_pair or abs(hit_s - start_s) > self.EVIDENCE_DRAG_THRESHOLD
+            self.evidence_click_anchor = None
+            self.sel = ("edge", edge_id)
             self.render()
 
     def evidence_move(self, q: QPointF) -> None:
@@ -1589,23 +1624,40 @@ class AnnotatorWindow(QMainWindow):
             return
         hit = self.nearest_segment(q.x(), q.y())
         if hit and hit[0] == self.evidence_anchor[0]:
+            if abs(hit[4] - self.evidence_anchor[1]) > self.EVIDENCE_DRAG_THRESHOLD:
+                self.evidence_dragged = True
             self.evidence_selection = (hit[0], self.evidence_anchor[1], hit[4])
             self.render()
 
     def evidence_release(self, q: QPointF) -> None:
         self.evidence_move(q)
+        active_anchor = self.evidence_anchor
+        dragged = self.evidence_dragged
+        click_pair = self.evidence_click_pair
         self.evidence_anchor = None
-        if self.evidence_selection:
-            edge_id, start, end = self.evidence_selection
-            if abs(end - start) < 1.0 and self.m:
-                total = polyline_length(self.m.segment(edge_id)["points"])
-                start, end = max(0.0, start - 12.0), min(total, end + 12.0)
-                self.evidence_selection = (edge_id, start, end)
-            self.status_message.setText(
-                "已选择区间 — 请按 A / B / C / D / E / U" if self.language == "zh_CN" else "Span selected — press A / B / C / D / E / U"
-            )
+        self.evidence_dragged = False
+        self.evidence_click_pair = False
+        if not self.evidence_selection or not active_anchor:
+            return
+        edge_id, start, end = self.evidence_selection
+        if not dragged and not click_pair:
+            self.evidence_click_anchor = (edge_id, start)
+            self.evidence_selection = None
+            self.status_message.setText(self.t("evidence_start_selected"))
             self.update_inspector()
             self.render()
+            return
+        if abs(end - start) < self.EVIDENCE_DRAG_THRESHOLD:
+            self.evidence_click_anchor = (edge_id, start)
+            self.evidence_selection = None
+            self.status_message.setText(self.t("evidence_end_too_close"))
+            self.update_inspector()
+            self.render()
+            return
+        self.evidence_click_anchor = None
+        self.status_message.setText(self.t("evidence_span_selected"))
+        self.update_inspector()
+        self.render()
 
     def assign_selected_evidence(self, key: str) -> None:
         if self.is_read_only():
@@ -1622,6 +1674,7 @@ class AnnotatorWindow(QMainWindow):
             return
         self.sel = ("span", edge_id, min(start, end), max(start, end))
         self.evidence_selection = None
+        self.evidence_click_anchor = None
         self.changed(model_already_changed=True)
         self.status_message.setText(f"{key} — {self.evidence_label(EVIDENCE_BY_KEY[key])}")
         if self.auto_advance.isChecked():
@@ -1649,6 +1702,9 @@ class AnnotatorWindow(QMainWindow):
             current = (self.sel[1], self.sel[2], self.sel[3])
         index = gaps.index(current) if current in gaps else (-1 if direction > 0 else 0)
         chosen = gaps[(index + direction) % len(gaps)]
+        self.evidence_click_anchor = None
+        self.evidence_dragged = False
+        self.evidence_click_pair = False
         self.evidence_selection = chosen
         self.sel = ("span", *chosen)
         self.fit_span(*chosen)
@@ -1777,10 +1833,25 @@ class AnnotatorWindow(QMainWindow):
                 ),
             ).setZValue(10)
             if evidence_visible and not whole_excluded:
-                for span in segment.get("evidence_spans", []):
+                # Unreviewed gaps get a dedicated dashed amber stroke.  A plain
+                # base path is too easy to mistake for a completed audit.
+                total = polyline_length(segment["points"])
+                cursor = 0.0
+                spans = sorted(segment.get("evidence_spans", []), key=lambda item: item.get("start_s", 0.0))
+                for span in spans:
+                    start = max(0.0, min(total, float(span.get("start_s", 0.0))))
+                    end = max(start, min(total, float(span.get("end_s", start))))
+                    if start > cursor + 0.5:
+                        gap = polyline_slice(segment["points"], cursor, start)
+                        scene.addPath(_path(gap), _pen(UNREVIEWED_COLOR, 6.0, opacity=0.95, dashed=True)).setZValue(12)
+                    cursor = max(cursor, end)
+                if cursor < total - 0.5:
+                    gap = polyline_slice(segment["points"], cursor, total)
+                    scene.addPath(_path(gap), _pen(UNREVIEWED_COLOR, 6.0, opacity=0.95, dashed=True)).setZValue(12)
+                for span in spans:
                     points = polyline_slice(segment["points"], span["start_s"], span["end_s"])
                     color = EVIDENCE_COLORS.get(span.get("evidence"), "#607d8b")
-                    scene.addPath(_path(points), _pen(color, 5.0, opacity=self.evidence_opacity)).setZValue(12)
+                    scene.addPath(_path(points), _pen(color, 5.0, opacity=self.evidence_opacity)).setZValue(13)
             if active and self.layer_state["control_points"]:
                 for index, point in enumerate(segment["points"]):
                     selected = self.sel == ("point", segment["edge_id"], index)
@@ -1806,6 +1877,17 @@ class AnnotatorWindow(QMainWindow):
                 scene.addPath(_path(points), _pen("#fbfaf6", 9.0, opacity=0.6)).setZValue(30)
                 scene.addPath(_path(points), _pen("#394b52", 5.0, opacity=0.95)).setZValue(31)
             except StopIteration:
+                pass
+        if self.evidence_click_anchor:
+            edge_id, anchor_s = self.evidence_click_anchor
+            try:
+                segment = self.m.segment(edge_id)
+                point = polyline_slice(segment["points"], anchor_s, anchor_s)[0]
+                marker = scene.addEllipse(-7, -7, 14, 14, _pen("#fffaf0", 2.0), QColor(UNREVIEWED_COLOR))
+                marker.setPos(point[0], point[1])
+                marker.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                marker.setZValue(35)
+            except (StopIteration, IndexError):
                 pass
         if self.temp:
             points = [*self.temp]
@@ -2217,6 +2299,7 @@ class AnnotatorWindow(QMainWindow):
         self.review_details.setText(self.t(
             "review_details", unreviewed=stats["unreviewed_px"], context=context, weak=weak
         ))
+        self.update_review_legend()
         if self.clean_rgb:
             self.form.addRow(QLabel(
                 "纯净 RGB\n标注详情已隐藏。" if self.language == "zh_CN" else "CLEAN RGB\nAnnotation details are hidden."
