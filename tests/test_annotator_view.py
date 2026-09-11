@@ -285,11 +285,32 @@ def test_evidence_two_clicks_select_a_continuous_range(tmp_path):
     window.evidence_release(QPointF(850, 100))
 
     assert window.evidence_selection == (edge_id, 100.0, 800.0)
+    window.set_zoom(2.0)
+    before_zoom = window.view.transform().m11()
     window.assign_selected_evidence("A")
     assert [
         (span["start_s"], span["end_s"], span["evidence"])
         for span in window.m.segment(edge_id)["evidence_spans"]
     ] == [(100.0, 800.0, "clear_visual")]
+    assert window.sel is None
+    assert window.view.transform().m11() == before_zoom
+    window.close()
+
+
+def test_evidence_assignment_with_auto_advance_keeps_zoom_and_clears_selection(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    Image.new("RGB", (1000, 200), "green").save(tmp_path / "a.png")
+    window = AnnotatorWindow(state_store=AppStateStore(tmp_path / "state.json"))
+    window.open_folder(tmp_path)
+    edge_id = window.m.add_segment([[50, 100], [950, 100]])
+    window.changed(model_already_changed=True)
+    window.set_mode("EVIDENCE")
+    window.set_zoom(3.0)
+    window.evidence_selection = (edge_id, 100.0, 800.0)
+    window.sel = ("span", edge_id, 100.0, 800.0)
+    window.assign_selected_evidence("A")
+    assert window.sel is None
+    assert window.view.transform().m11() == 3.0
     window.close()
 
 

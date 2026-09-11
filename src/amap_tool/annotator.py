@@ -1672,15 +1672,20 @@ class AnnotatorWindow(QMainWindow):
         except ValueError as exc:
             self.status_message.setText(str(exc))
             return
-        self.sel = ("span", edge_id, min(start, end), max(start, end))
+        # Evidence assignment is an audit action, not a route-edit action.
+        # Clear the route selection so the finished span does not remain
+        # highlighted after the label is committed.
+        self.sel = None
         self.evidence_selection = None
         self.evidence_click_anchor = None
         self.changed(model_already_changed=True)
         self.status_message.setText(f"{key} — {self.evidence_label(EVIDENCE_BY_KEY[key])}")
         if self.auto_advance.isChecked():
-            self.next_unreviewed_span(1)
+            # Advance the audit cursor without fitting the view.  Fitting a
+            # tiny gap here was the source of the surprising automatic zoom.
+            self.next_unreviewed_span(1, fit=False)
 
-    def next_unreviewed_span(self, direction: int = 1) -> bool:
+    def next_unreviewed_span(self, direction: int = 1, *, fit: bool = True) -> bool:
         if not self.m:
             return False
         gaps = []
@@ -1706,8 +1711,9 @@ class AnnotatorWindow(QMainWindow):
         self.evidence_dragged = False
         self.evidence_click_pair = False
         self.evidence_selection = chosen
-        self.sel = ("span", *chosen)
-        self.fit_span(*chosen)
+        self.sel = None
+        if fit:
+            self.fit_span(*chosen)
         self.render()
         self.update_inspector()
         return True
